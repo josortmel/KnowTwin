@@ -154,7 +154,8 @@ async def broadcast_internal(
     secret_header = request.headers.get("X-Internal-Secret", "")
 
     authorized = False
-    if _INTERNAL_BROADCAST_SECRET and secret_header == _INTERNAL_BROADCAST_SECRET:
+    import hmac as _hmac
+    if _INTERNAL_BROADCAST_SECRET and _hmac.compare_digest(secret_header, _INTERNAL_BROADCAST_SECRET):
         authorized = True
     elif auth_header.startswith("Bearer "):
         try:

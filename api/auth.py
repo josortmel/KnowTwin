@@ -15,7 +15,7 @@ JWT payload (claims):
 - lead_workspaces    : lista de workspace_id donde el user es lead
 - iat / exp          : timestamps estandar JWT
 
-API key format: `ecodb_<32-bytes-base64url>` (~44 chars).
+API key format: `knowtwin_<32-bytes-base64url>` (~44 chars).
 - Hash en DB: SHA-256(API_KEY_PEPPER + key) hex (64 chars).
 - Sin salt por key (lookup O(1) por hash).
 - Pepper en env var → resistencia adicional a DB dumps.
@@ -160,8 +160,8 @@ async def get_current_user(
 ) -> dict:
     """Resuelve el user actual desde:
        - `Authorization: Bearer <jwt>` o
-       - `Authorization: Bearer <ecodb_api_key>` o
-       - `Authorization: ApiKey <ecodb_api_key>`
+       - `Authorization: Bearer <knowtwin_api_key>` o
+       - `Authorization: ApiKey <knowtwin_api_key>`
 
     Devuelve el dict de claims del JWT (con el shape de build_jwt_payload).
     Lanza 401 si falta o es invalido.
@@ -209,7 +209,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class TokenRequest(BaseModel):
-    api_key: str = Field(..., description="API key con prefijo ecodb_")
+    api_key: str = Field(..., description="API key con prefijo knowtwin_")
 
 
 class TokenResponse(BaseModel):
