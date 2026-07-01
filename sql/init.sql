@@ -358,6 +358,8 @@ CREATE TABLE documents (
   reconciled    BOOLEAN DEFAULT false,
   last_indexed  TIMESTAMPTZ,
   last_modified TIMESTAMPTZ,
+  trust_hint    TEXT DEFAULT NULL
+                  CHECK (trust_hint IN ('formal_contract','adr','signed_plan','wiki','presentation','email','orgchart','other')),
   metadata      JSONB DEFAULT '{}',
   created_at    TIMESTAMPTZ DEFAULT now()
 );
@@ -969,7 +971,7 @@ CREATE OR REPLACE FUNCTION age_sync_insert() RETURNS trigger AS
 $body$
 BEGIN
     EXECUTE format(
-        'SELECT * FROM cypher(''knowtwin_graph'', $$CREATE (n:Entity {name: %s, sql_id: %s}) RETURN id(n)$$) AS (node_id agtype)',
+        'SELECT * FROM cypher(''knowtwin_graph'', $cq$CREATE (n:Entity {name: %s, sql_id: %s}) RETURN id(n)$cq$) AS (node_id agtype)',
         cypher_quote(NEW.name), NEW.id
     );
     RETURN NEW;
@@ -992,7 +994,7 @@ BEGIN
     END IF;
     IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND NEW.status != 'active' AND (OLD.status = 'active' OR OLD.status IS NULL)) THEN
         EXECUTE format(
-            'SELECT * FROM cypher(''knowtwin_graph'', $$MATCH (n:Entity {sql_id: %s}) DETACH DELETE n$$) AS (d agtype)',
+            'SELECT * FROM cypher(''knowtwin_graph'', $cq$MATCH (n:Entity {sql_id: %s}) DETACH DELETE n$cq$) AS (d agtype)',
             target_id
         );
     END IF;
@@ -1015,7 +1017,7 @@ $body$
 BEGIN
     IF NEW.name != OLD.name THEN
         EXECUTE format(
-            'SELECT * FROM cypher(''knowtwin_graph'', $$MATCH (n:Entity {sql_id: %s}) SET n.name = %s RETURN id(n)$$) AS (node_id agtype)',
+            'SELECT * FROM cypher(''knowtwin_graph'', $cq$MATCH (n:Entity {sql_id: %s}) SET n.name = %s RETURN id(n)$cq$) AS (node_id agtype)',
             NEW.id, cypher_quote(NEW.name)
         );
     END IF;
@@ -1032,7 +1034,7 @@ $body$
 BEGIN
     IF NEW.status = 'active' AND (OLD.status != 'active' OR OLD.status IS NULL) THEN
         EXECUTE format(
-            'SELECT * FROM cypher(''knowtwin_graph'', $$CREATE (n:Entity {name: %s, sql_id: %s}) RETURN id(n)$$) AS (node_id agtype)',
+            'SELECT * FROM cypher(''knowtwin_graph'', $cq$CREATE (n:Entity {name: %s, sql_id: %s}) RETURN id(n)$cq$) AS (node_id agtype)',
             cypher_quote(NEW.name), NEW.id
         );
     END IF;

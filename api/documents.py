@@ -1,4 +1,4 @@
-"""Document management endpoints — Task 4.11."""
+"""KnowTwin document management endpoints."""
 from __future__ import annotations
 
 import json
@@ -14,9 +14,14 @@ from pydantic import BaseModel, Field
 
 from auth import get_current_user
 from db import get_pool
-from permissions import visible_project_ids
+from permissions import check_access, visible_project_ids
 
-log = logging.getLogger("ecodb.documents")
+log = logging.getLogger("knowtwin.documents")
+
+_TRUST_HINT_VALUES = frozenset({
+    "formal_contract", "adr", "signed_plan", "wiki",
+    "presentation", "email", "orgchart", "other",
+})
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -32,6 +37,7 @@ class DocumentCreate(BaseModel):
     project_id: int
     workspace_id: Optional[int] = None
     visibility: Literal["public", "private"] = "public"
+    trust_hint: Optional[str] = None
 
 
 class DocumentResponse(BaseModel):
@@ -48,6 +54,7 @@ class DocumentResponse(BaseModel):
     last_indexed: Optional[datetime] = None
     processing_metrics: Optional[dict] = None
     base_weight: float
+    trust_hint: Optional[str] = None
     created_at: datetime
 
 
@@ -84,7 +91,7 @@ _DOC_SELECT = """
     SELECT id, uri, filename, doc_type, workspace_id, project_id,
            visibility::text, status, retry_count,
            processing_started_at, last_indexed, processing_metrics,
-           base_weight, created_at
+           base_weight, trust_hint, created_at
     FROM documents
 """
 
@@ -107,6 +114,7 @@ def _row_to_response(row) -> DocumentResponse:
         last_indexed=row.get("last_indexed"),
         processing_metrics=metrics,
         base_weight=float(row["base_weight"]),
+        trust_hint=row.get("trust_hint"),
         created_at=row["created_at"],
     )
 
@@ -139,24 +147,25 @@ async def create_document(
                 raise HTTPException(404, "project not found")
             workspace_id = ws_id
 
-        if not actor.get("is_super"):
-            visible = await visible_project_ids(conn, actor)
-            if body.project_id not in visible:
-                raise HTTPException(403, "no access to target project")
+        await check_access(conn, actor, body.project_id, "curator")
+
+        if body.trust_hint is not None and body.trust_hint not in _TRUST_HINT_VALUES:
+            raise HTTPException(422, f"trust_hint must be one of {sorted(_TRUST_HINT_VALUES)}")
 
         row = await conn.fetchrow(
             """
-            INSERT INTO documents (uri, filename, doc_type, workspace_id, project_id, visibility, status)
-            VALUES ($1, $2, $3, $4, $5, $6, 'queued')
+            INSERT INTO documents (uri, filename, doc_type, workspace_id, project_id, visibility, status, trust_hint)
+            VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7)
             RETURNING id, uri, filename, doc_type, workspace_id, project_id,
                       visibility::text, status, retry_count,
                       processing_started_at, last_indexed, processing_metrics,
-                      base_weight, created_at
+                      base_weight, trust_hint, created_at
             """,
             body.uri, body.filename, body.doc_type,
             workspace_id, body.project_id, body.visibility,
+            body.trust_hint,
         )
-        await conn.execute("SELECT pg_notify('ecodb_ingest', $1)", str(row["id"]))
+        await conn.execute("SELECT pg_notify('knowtwin_ingest', $1)", str(row["id"]))
         await conn.execute(
             """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
             VALUES ($1, 'register_document', 'document', $2, $3::jsonb, $4)""",
@@ -189,11 +198,14 @@ async def upload_document(
     file: UploadFile = File(...),
     project_id: int = Query(..., gt=0),
     visibility: Literal["public", "private"] = "public",
+    trust_hint: Optional[str] = Query(None),
     actor: dict = Depends(get_current_user),
 ) -> DocumentResponse:
-    """Upload a document file via multipart. Dashboard uses this — no host path needed."""
+    """Upload a document file via multipart."""
     if not file.filename:
         raise HTTPException(400, "file has no name")
+    if trust_hint is not None and trust_hint not in _TRUST_HINT_VALUES:
+        raise HTTPException(422, f"trust_hint must be one of {sorted(_TRUST_HINT_VALUES)}")
 
     os.makedirs(_MEDIA_STORE, exist_ok=True)
     safe_id = str(_uuid.uuid4())
@@ -209,11 +221,11 @@ async def upload_document(
 
     pool = await get_pool()
     async with pool.acquire() as conn:
-        if not actor.get("is_super"):
-            visible = await visible_project_ids(conn, actor)
-            if project_id not in visible:
-                os.unlink(stored_path)
-                raise HTTPException(403, "no access to target project")
+        try:
+            await check_access(conn, actor, project_id, "curator")
+        except HTTPException:
+            os.unlink(stored_path)
+            raise
 
         workspace_id = await conn.fetchval(
             "SELECT workspace_id FROM projects WHERE id = $1", project_id
@@ -224,17 +236,18 @@ async def upload_document(
 
         row = await conn.fetchrow(
             """
-            INSERT INTO documents (uri, filename, doc_type, workspace_id, project_id, visibility, status)
-            VALUES ($1, $2, $3, $4, $5, $6, 'queued')
+            INSERT INTO documents (uri, filename, doc_type, workspace_id, project_id, visibility, status, trust_hint)
+            VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7)
             RETURNING id, uri, filename, doc_type, workspace_id, project_id,
                       visibility::text, status, retry_count,
                       processing_started_at, last_indexed, processing_metrics,
-                      base_weight, created_at
+                      base_weight, trust_hint, created_at
             """,
             stored_path, file.filename, doc_type,
             workspace_id, project_id, visibility,
+            trust_hint,
         )
-        await conn.execute("SELECT pg_notify('ecodb_ingest', $1)", str(row["id"]))
+        await conn.execute("SELECT pg_notify('knowtwin_ingest', $1)", str(row["id"]))
         await conn.execute(
             """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
             VALUES ($1, 'upload_document', 'document', $2, $3::jsonb, $4)""",
@@ -379,15 +392,13 @@ async def reindex_document(
 ) -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        if not actor.get("is_super"):
-            raise HTTPException(404, "not found")
-
         doc = await conn.fetchrow(
             "SELECT id, project_id, status FROM documents WHERE id = $1 AND status != 'deleted'",
             document_id,
         )
         if doc is None:
             raise HTTPException(404, "not found")
+        await check_access(conn, actor, doc["project_id"], "curator")
 
         await conn.execute("""
             UPDATE documents
@@ -395,7 +406,7 @@ async def reindex_document(
                 processing_started_at = NULL, last_indexed = NULL
             WHERE id = $1
         """, document_id)
-        await conn.execute("SELECT pg_notify('ecodb_ingest', $1)", str(document_id))
+        await conn.execute("SELECT pg_notify('knowtwin_ingest', $1)", str(document_id))
         await conn.execute(
             """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
             VALUES ($1, 'reindex_document', 'document', $2, $3::jsonb, $4)""",
@@ -418,14 +429,12 @@ async def delete_document(
 ) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        if not actor.get("is_super"):
-            raise HTTPException(404, "not found")
-
         doc = await conn.fetchrow(
             "SELECT id, project_id, status FROM documents WHERE id = $1", document_id
         )
         if doc is None or doc["status"] == "deleted":
             raise HTTPException(404, "not found")
+        await check_access(conn, actor, doc["project_id"], "curator")
 
         await conn.execute(
             "UPDATE documents SET status = 'deleted' WHERE id = $1", document_id

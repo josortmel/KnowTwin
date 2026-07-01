@@ -1,9 +1,8 @@
-"""EcoDB document ingestion worker — Fase 4 Task 4.1.
+"""KnowTwin document ingestion worker — importable module.
 
-Standalone process. Listens for NOTIFY on channel 'ecodb_ingest'.
+In-process in knowtwin-api. Listens for NOTIFY on channel 'knowtwin_ingest'.
 Processes documents: parse → chunk → GLiNER → graph link (no chunk embedding).
-Entrypoint: python worker.py
-Docker: docker compose --profile with-ingestion up
+Started via start_ingest_listener() from main.py lifespan.
 """
 import asyncio
 import hashlib
@@ -17,9 +16,7 @@ import time
 import asyncpg
 import httpx
 
-from background import run_governance_cycle
-
-log = logging.getLogger("ecodb.worker")
+log = logging.getLogger("knowtwin.worker")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 API_URL = os.environ.get("ECODB_API_INTERNAL_URL", "http://knowtwin-api:8080")
@@ -147,7 +144,7 @@ async def process_document(pool: asyncpg.Pool, document_id: str) -> None:
         safe_path = _validate_document_path(uri)
 
         # Re-index: clear old chunks if present (Task 4.13 Part A)
-        linked_memory_ids: list[str] = []
+        linked_claim_ids: list[str] = []
         async with pool.acquire() as conn:
             existing_chunks = await conn.fetchval(
                 "SELECT count(*) FROM document_chunks WHERE document_id = $1", doc_id
@@ -164,9 +161,9 @@ async def process_document(pool: asyncpg.Pool, document_id: str) -> None:
                 )
                 # Collect linked memories for source_updated broadcast after success
                 linked_rows = await conn.fetch(
-                    "SELECT memory_id FROM memory_document_links WHERE document_id = $1", doc_id
+                    "SELECT claim_id FROM claim_document_links WHERE document_id = $1", doc_id
                 )
-                linked_memory_ids = [str(r["memory_id"]) for r in linked_rows]
+                linked_claim_ids = [str(r["claim_id"]) for r in linked_rows]
 
         # Stage 1: Parse (Task 4.2 Docling / Task 4.3 Whisper)
         from parsers import AUDIO_EXTENSIONS, parse_document, transcribe_audio
@@ -345,10 +342,10 @@ async def process_document(pool: asyncpg.Pool, document_id: str) -> None:
             "document_id": str(doc_id),
             "chunks": metrics.get("chunk_count", 0),
         }, _doc_org_id)
-        if linked_memory_ids:
+        if linked_claim_ids:
             await _broadcast_sse("source_updated", {
                 "document_id": str(doc_id),
-                "affected_memory_ids": linked_memory_ids,
+                "affected_claim_ids": linked_claim_ids,
             }, _doc_org_id)
 
         log.info(
@@ -444,51 +441,20 @@ async def recovery_loop(pool: asyncpg.Pool) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
-async def main() -> None:
-    log.info("Worker starting. DATABASE_URL=%s...", DATABASE_URL[:30])
-
-    pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=5)
-    await recover_stuck_documents(pool)
+async def start_ingest_listener(pool: asyncpg.Pool) -> None:
+    """In-process LISTEN loop for knowtwin_ingest. Called from main.py lifespan."""
     _recovery_task = asyncio.create_task(recovery_loop(pool))
 
-    async def _governance_loop():
-        try:
-            await run_governance_cycle(pool)
-        except Exception as exc:
-            log.error("Initial governance cycle failed: %r", exc)
-        while True:
-            await asyncio.sleep(3600)
-            try:
-                await run_governance_cycle(pool)
-            except Exception as exc:
-                log.error("Governance cycle failed: %r", exc)
-
-    _governance_task = asyncio.create_task(_governance_loop())
-
-    async def _access_flush_loop():
-        while True:
-            await asyncio.sleep(300)
-            try:
-                from search import flush_accessed_buffer
-                await flush_accessed_buffer(pool)
-            except Exception as exc:
-                log.error("Access flush failed: %r", exc)
-
-    _access_flush_task = asyncio.create_task(_access_flush_loop())
-
-    # asyncpg LISTEN/NOTIFY: callback-based API puts payloads into a queue.
-    # conn.add_listener registers callback; the main loop awaits queue.get().
     notify_queue: asyncio.Queue[str] = asyncio.Queue()
 
     def _on_notify(connection: asyncpg.Connection, pid: int, channel: str, payload: str) -> None:
         notify_queue.put_nowait(payload)
 
     listen_conn = await asyncpg.connect(DATABASE_URL)
-    await listen_conn.add_listener("ecodb_ingest", _on_notify)
-    log.info("Worker listening on channel 'ecodb_ingest'")
+    await listen_conn.add_listener("knowtwin_ingest", _on_notify)
+    log.info("Ingest listener active on channel 'knowtwin_ingest'")
 
     try:
-        # Drain already-queued documents on startup
         async with pool.acquire() as conn:
             queued = await conn.fetch(
                 "SELECT id FROM documents WHERE status = 'queued' ORDER BY created_at LIMIT 10"
@@ -496,14 +462,12 @@ async def main() -> None:
         for row in queued:
             await process_document(pool, str(row["id"]))
 
-        # Main loop: block on notify queue, fall back to periodic poll on timeout
         while True:
             try:
                 payload = await asyncio.wait_for(notify_queue.get(), timeout=30.0)
                 if payload:
                     await process_document(pool, payload)
                 else:
-                    # Empty payload NOTIFY → drain queued
                     async with pool.acquire() as conn:
                         queued = await conn.fetch(
                             "SELECT id FROM documents WHERE status = 'queued' ORDER BY created_at LIMIT 5"
@@ -511,7 +475,6 @@ async def main() -> None:
                     for row in queued:
                         await process_document(pool, str(row["id"]))
             except asyncio.TimeoutError:
-                # Periodic poll fallback (guards against missed NOTIFYs)
                 async with pool.acquire() as conn:
                     queued = await conn.fetch(
                         "SELECT id FROM documents WHERE status = 'queued' ORDER BY created_at LIMIT 5"
@@ -519,25 +482,14 @@ async def main() -> None:
                 for row in queued:
                     await process_document(pool, str(row["id"]))
             except Exception as exc:
-                log.error("Main loop error: %r", exc)
+                log.error("Ingest loop error: %r", exc)
                 await asyncio.sleep(5)
     finally:
-        await listen_conn.remove_listener("ecodb_ingest", _on_notify)
+        await listen_conn.remove_listener("knowtwin_ingest", _on_notify)
         await listen_conn.close()
         _recovery_task.cancel()
-        _governance_task.cancel()
-        _access_flush_task.cancel()
         try:
-            await asyncio.gather(_recovery_task, _governance_task, _access_flush_task, return_exceptions=True)
+            await asyncio.gather(_recovery_task, return_exceptions=True)
         except Exception:
             pass
-        await pool.close()
-        log.info("Worker shutdown complete.")
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
-    asyncio.run(main())
+        log.info("Ingest listener shutdown.")

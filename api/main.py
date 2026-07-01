@@ -21,6 +21,7 @@ Pendiente (deuda anotada):
 - VS6 → pip-compile --generate-hashes antes de imagen de produccion.
 - VS9 → rate limiting (slowapi) antes de VPS.
 """
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
@@ -114,7 +115,27 @@ async def lifespan(app: FastAPI):
         is_avail = await llm.available()
         _ecodb_log.info("LLM provider %s: available=%s", settings.ECODB_LLM_PROVIDER, is_avail)
 
+    # In-process document ingestion (P1.8): recover stuck + start LISTEN loop
+    _ingest_task = None
+    try:
+        from worker import recover_stuck_documents, start_ingest_listener
+        pool = await get_pool()
+        await recover_stuck_documents(pool)
+        _ingest_task = asyncio.create_task(start_ingest_listener(pool))
+        _ecodb_log.info("Ingest listener started on channel knowtwin_ingest")
+    except Exception as _ingest_exc:
+        _ecodb_log.warning(
+            "Ingest listener startup failed (documents won't auto-process): %r", _ingest_exc
+        )
+
     yield
+
+    if _ingest_task is not None:
+        _ingest_task.cancel()
+        try:
+            await _ingest_task
+        except (asyncio.CancelledError, Exception):
+            pass
     from llm_provider import get_llm_provider
     llm = get_llm_provider()
     if llm and hasattr(llm, "aclose"):
