@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/router.tsx","./src/vite-env.d.ts","./src/components/safetext.tsx","./src/components/settingsdrawer.tsx","./src/lib/api.ts","./src/lib/auth.ts","./src/lib/queryclient.ts","./src/lib/render.ts","./src/lib/ws.ts","./src/pages/interviewpage.tsx","./src/pages/setuppage.tsx","./src/pages/twinpage.tsx"],"version":"5.7.3"}

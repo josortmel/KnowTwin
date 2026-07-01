@@ -43,7 +43,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
+    restart: "no"
     networks:
       - knowtwin-net
 
@@ -76,7 +76,7 @@ services:
       timeout: 10s
       retries: 10
       start_period: 180s
-    restart: unless-stopped
+    restart: "no"
     networks:
       - knowtwin-net
 
@@ -100,7 +100,7 @@ services:
       # Cold GLiNER load headroom. Model is provisioned via api_hf_cache volume
       # (no runtime HF download). SHIP-CLEAN fix = bake model into image (D-P1.1-5).
       start_period: 180s
-    restart: unless-stopped
+    restart: "no"
     networks:
       - knowtwin-net
 
@@ -141,28 +141,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    restart: unless-stopped
+    restart: "no"
     networks:
       - knowtwin-net
 
   knowtwin-frontend:
-    # P1.1 scaffold: static placeholder served by python http.server (zero extra
-    # image pull — reuses python:3.12-slim). Real Vite/React app lands at P1.18.
-    image: python:3.12-slim
+    # P1.18: Vite dev server for React SPA. Production = nginx + build output.
+    image: node:22-slim
     container_name: knowtwin-frontend
-    working_dir: /site
-    command: ["python", "-m", "http.server", "3000"]
+    working_dir: /app
+    command: ["sh", "-c", "npm install --prefer-offline && npx vite --host 0.0.0.0 --port 3000"]
     volumes:
-      - ./frontend:/site:ro
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
     ports:
       - "3001:3000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/')"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 5s
-    restart: unless-stopped
+      start_period: 30s
+    restart: "no"
     networks:
       - knowtwin-net
 
@@ -186,7 +186,7 @@ services:
     depends_on:
       knowtwin-db:
         condition: service_healthy
-    restart: unless-stopped
+    restart: "no"
     networks:
       - knowtwin-net
 
@@ -196,6 +196,7 @@ volumes:
   api_hf_cache:
   torch_cache:
   hf_cache:
+  frontend_node_modules:
 
 networks:
   knowtwin-net:
