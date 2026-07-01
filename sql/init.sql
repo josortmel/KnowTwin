@@ -279,6 +279,8 @@ CREATE TABLE claims (
   embedding            vector(512),
   embedding_model      TEXT DEFAULT 'jina-v4',
 
+  -- NO ACTION on disputed_by FK is intentional — dispute evidence chain must
+  -- be preserved. Resolve dispute (SET NULL) before deleting the disputing claim.
   disputed_by_claim_id UUID REFERENCES claims(id),
   doc_strength         REAL,
   resolution_note      TEXT,
@@ -309,7 +311,7 @@ CREATE INDEX idx_claims_disputed_by    ON claims (disputed_by_claim_id)
 -- ============================================================================
 CREATE TABLE claim_entity_links (
   claim_id       UUID REFERENCES claims(id) ON DELETE CASCADE,
-  entity_node_id BIGINT NOT NULL,
+  entity_node_id BIGINT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   link_type      TEXT DEFAULT 'mentions',
   auto           BOOLEAN DEFAULT true,
   created_at     TIMESTAMPTZ DEFAULT now(),
@@ -349,7 +351,7 @@ CREATE TABLE documents (
   processing_metrics    JSONB,
   base_weight   REAL NOT NULL DEFAULT 0.7,
   trust_origin  TEXT DEFAULT 'manual',
-  trust_tier    INT DEFAULT 1 CHECK(trust_tier BETWEEN 0 AND 3),
+  trust_tier    INT DEFAULT 1 CHECK(trust_tier BETWEEN 0 AND 2),
   content_fingerprint TEXT,
   document_version INT DEFAULT 1,
   supersedes_document_id UUID REFERENCES documents(id) ON DELETE SET NULL,
@@ -403,7 +405,7 @@ CREATE INDEX idx_cdl_document ON claim_document_links (document_id);
 
 CREATE TABLE document_entity_links (
   document_id    UUID REFERENCES documents(id) ON DELETE CASCADE,
-  entity_node_id BIGINT NOT NULL,
+  entity_node_id BIGINT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   chunk_id       UUID NOT NULL REFERENCES document_chunks(id) ON DELETE CASCADE,
   created_at     TIMESTAMPTZ DEFAULT now(),
   PRIMARY KEY (document_id, entity_node_id, chunk_id)
@@ -700,6 +702,12 @@ CREATE TABLE interview_sessions (
   created_at       TIMESTAMPTZ DEFAULT now(),
   completed_at     TIMESTAMPTZ
 );
+
+-- FK claims.session_id → interview_sessions(id). Added via ALTER (FK ordering).
+ALTER TABLE claims
+  ADD CONSTRAINT fk_claims_session
+  FOREIGN KEY (session_id) REFERENCES interview_sessions(id) ON DELETE SET NULL;
+CREATE INDEX idx_claims_session ON claims (session_id);
 
 CREATE TABLE verified_documents (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

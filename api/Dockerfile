@@ -36,7 +36,8 @@ RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cro
 # clusters/briefing/foresights/cases/skills/cells + migrate_3_0c + migrations omitidos).
 COPY --chown=apiuser:apiuser \
     api/admin.py api/agents.py api/auth.py api/background.py api/bootstrap_first_apikey.py \
-    api/cell_configs.py api/cell_templates.py api/cell_worker.py api/chunker.py api/classifier.py \
+    api/cell_configs.py api/cell_templates.py api/cell_worker.py api/chunker.py api/claims.py \
+    api/classifier.py \
     api/crypto.py api/db.py api/documents.py api/embeddings_client.py api/entity_normalization.py \
     api/events.py api/gliner_service.py api/graph.py api/llm_provider.py api/main.py \
     api/memories.py api/onboarding.py api/pagination.py api/parsers.py \
@@ -44,6 +45,8 @@ COPY --chown=apiuser:apiuser \
     api/search.py api/settings.py api/shared_models.py api/stats.py api/teams.py \
     api/telemetry.py api/telemetry_api.py api/users.py api/worker.py api/workspaces.py \
     ./
+
+COPY --chown=apiuser:apiuser api/tests/ ./tests/
 
 COPY --chown=root:root api/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

@@ -207,9 +207,13 @@ def create_app(environment: str = None) -> FastAPI:
     # Auth router (.
     app.include_router(auth_module.router)
 
-    # Memories router (.
+    # Memories router (EcoDB legacy — dead code, claims table replaces memories).
     import memories
     app.include_router(memories.router)
+
+    # Claims router (KnowTwin — embed gate).
+    import claims
+    app.include_router(claims.router)
 
     # Graph router ( — SQL + AGE atomico.
     import graph

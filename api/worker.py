@@ -1,7 +1,7 @@
 """EcoDB document ingestion worker — Fase 4 Task 4.1.
 
 Standalone process. Listens for NOTIFY on channel 'ecodb_ingest'.
-Processes documents: parse → chunk → GLiNER → embed → graph link.
+Processes documents: parse → chunk → GLiNER → graph link (no chunk embedding).
 Entrypoint: python worker.py
 Docker: docker compose --profile with-ingestion up
 """
@@ -22,8 +22,7 @@ from background import run_governance_cycle
 log = logging.getLogger("ecodb.worker")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-from settings import EMBEDDINGS_URL
-API_URL = os.environ.get("ECODB_API_INTERNAL_URL", "http://ecodb-api:8080")
+API_URL = os.environ.get("ECODB_API_INTERNAL_URL", "http://knowtwin-api:8080")
 MEDIA_STORE_DIR = os.environ.get("MEDIA_STORE_DIR", "/app/media")
 
 _URL_SCHEME_RE = re.compile(r'^(https?|ftp|file|rtsp|rtmp)://', re.IGNORECASE)
@@ -46,15 +45,8 @@ def _extract_frontmatter_tags(text: str) -> list[str]:
 
 # Timeouts per stage (seconds)
 PARSE_TIMEOUT = int(os.environ.get("PARSE_TIMEOUT", "300"))
-EMBED_TIMEOUT = int(os.environ.get("EMBED_TIMEOUT", "120"))
 GLINER_TIMEOUT = int(os.environ.get("GLINER_TIMEOUT", "60"))
 WHISPER_TIMEOUT = int(os.environ.get("WHISPER_TIMEOUT", "1800"))
-
-# Circuit breaker for embeddings
-from settings import CB_THRESHOLD, CB_WINDOW, CB_COOLDOWN
-_cb_failures: list[float] = []
-_cb_open_until: float = 0.0
-
 
 class EmbeddingsServiceError(RuntimeError):
     pass
@@ -82,29 +74,6 @@ def _validate_document_path(uri: str) -> str:
     return str(real)
 
 
-# ---------------------------------------------------------------------------
-# Circuit breaker
-# ---------------------------------------------------------------------------
-
-def _circuit_breaker_ok() -> bool:
-    now = time.time()
-    if now < _cb_open_until:
-        return False
-    _cb_failures[:] = [t for t in _cb_failures if now - t < CB_WINDOW]
-    return len(_cb_failures) < CB_THRESHOLD
-
-
-def _circuit_breaker_record_failure() -> None:
-    global _cb_open_until
-    now = time.time()
-    _cb_failures.append(now)
-    recent = [t for t in _cb_failures if now - t < CB_WINDOW]
-    if len(recent) >= CB_THRESHOLD:
-        _cb_open_until = now + CB_COOLDOWN
-        log.warning(
-            "Circuit breaker OPEN — embeddings failures >= %d in %ds. Cooling %ds.",
-            CB_THRESHOLD, CB_WINDOW, CB_COOLDOWN,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +104,7 @@ async def _broadcast_sse(event_type: str, data: dict, org_id: int | None = None)
 # ---------------------------------------------------------------------------
 
 async def process_document(pool: asyncpg.Pool, document_id: str) -> None:
-    """Main pipeline: parse → chunk → embed → GLiNER → graph link."""
+    """Main pipeline: parse → chunk → GLiNER → graph link."""
     t0 = time.time()
     metrics: dict = {}
 
@@ -293,38 +262,6 @@ async def process_document(pool: asyncpg.Pool, document_id: str) -> None:
         metrics["gliner_entity_count"] = sum(len(r["entities"]) for r in entity_results)
         metrics["gliner_ms"] = round((time.time() - t_gliner) * 1000)
 
-        # Stage 4: Embed chunks
-        t_embed = time.time()
-        if not _circuit_breaker_ok():
-            raise RuntimeError("Embeddings circuit breaker OPEN")
-        batch_size = int(os.environ.get("EMBED_BATCH_SIZE", "16"))
-        async with httpx.AsyncClient(timeout=float(EMBED_TIMEOUT)) as client:
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i:i + batch_size]
-                texts = [c.content for c in batch]
-                resp = await client.post(
-                    f"{EMBEDDINGS_URL}/embed/text",
-                    json={
-                        "texts": texts,
-                        "task": "retrieval",
-                        "prompt_name": "passage",
-                        "truncate_dim": 512,
-                    },
-                )
-                if resp.status_code != 200:
-                    raise EmbeddingsServiceError(f"Embeddings service returned {resp.status_code}")
-                embeddings = resp.json()["embeddings"]
-                async with pool.acquire() as conn:
-                    for j, emb in enumerate(embeddings):
-                        chunk_idx = chunks[i + j].chunk_index
-                        emb_literal = "[" + ",".join(str(x) for x in emb) + "]"
-                        await conn.execute(
-                            "UPDATE document_chunks SET embedding = $1::vector"
-                            " WHERE document_id = $2 AND chunk_index = $3",
-                            emb_literal, doc_id, chunk_idx,
-                        )
-        metrics["embed_ms"] = round((time.time() - t_embed) * 1000)
-
         # Stage 5: Graph entity linking
         t_graph = time.time()
         from graph import _ensure_node
@@ -421,9 +358,6 @@ async def process_document(pool: asyncpg.Pool, document_id: str) -> None:
 
     except Exception as exc:
         log.error("Document %s failed: %r", doc_id, exc)
-        if isinstance(exc, EmbeddingsServiceError):
-            _circuit_breaker_record_failure()
-
         async with pool.acquire() as conn:
             fail_row = await conn.fetchrow(
                 """
