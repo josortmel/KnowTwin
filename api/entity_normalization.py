@@ -1,10 +1,6 @@
-"""Normalizacion de entidades + allowlist tipos — .
+"""KnowTwin entity normalization + type allowlist.
 
-Modulo de CONFIG/REGLAS puro (separacion adv-code 2026-05-09):
-- gliner_service.py = ejecucion del pipeline ML.
-- entity_normalization.py = config/reglas (este modulo).
-
-Funciones puras, unit-testeables sin dependencias ML.
+Config/rules module (no ML dependencies). Imported by gliner_service.py.
 """
 from __future__ import annotations
 
@@ -12,42 +8,50 @@ import unicodedata
 from typing import Literal
 
 
-# Allowlist de entity_type permitidos en el sistema EcoDB.
-# Entity type allowlist (6 categories):
-# - 6 categorias que GLiNER puede clasificar decentemente Y aportan valor unico
-#   al grafo. Graph includes: person, organization, location, technology, product, project.
-# - producto = software/herramientas de terceros (FastAPI, GLiNER, Jina v4).
-# - proyecto = projects and platforms (e.g. EcoDB).
-# - organizacion = companies and organizations (e.g. Anthropic) — even if they
-#   construimos por dentro, son entidades empresariales con NIF.
+# 18-type allowlist: 13 offboarding domain types ∪ 6 GLiNER generic labels.
+# Overlap: proyecto (in both sets).
 EntityType = Literal[
+    # 13 offboarding domain types (Spec §2.6)
+    "persona_interna",
+    "persona_externa",
+    "cliente_cuenta",
+    "proveedor",
+    "proyecto",
+    "sistema_componente",
+    "tecnologia",
+    "decision_tecnica",
+    "riesgo",
+    "deuda_tecnica",
+    "acuerdo_informal",
+    "procedimiento_operativo",
+    "fuente_sesion",
+    # 6 GLiNER generic labels (DEFAULT_LABELS minus proyecto overlap)
     "persona",
-    "agente_ia",
     "organizacion",
     "lugar",
     "producto",
-    "proyecto",
-    "tecnologia",
-    "concepto",
-    "evento",
-    "artefacto",
-    "modelo_ia",
-    "metodologia",
+    "agente_ia",
 ]
 
 ALLOWED_ENTITY_TYPES: frozenset[str] = frozenset({
+    "persona_interna",
+    "persona_externa",
+    "cliente_cuenta",
+    "proveedor",
+    "proyecto",
+    "sistema_componente",
+    "tecnologia",
+    "decision_tecnica",
+    "riesgo",
+    "deuda_tecnica",
+    "acuerdo_informal",
+    "procedimiento_operativo",
+    "fuente_sesion",
     "persona",
-    "agente_ia",
     "organizacion",
     "lugar",
     "producto",
-    "proyecto",
-    "tecnologia",
-    "concepto",
-    "evento",
-    "artefacto",
-    "modelo_ia",
-    "metodologia",
+    "agente_ia",
 })
 
 
