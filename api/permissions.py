@@ -266,15 +266,16 @@ _CEO_ALLOWED_ADMIN_OPS = frozenset({
 
 
 async def resolve_entity_org_ids(conn, entity_name: str) -> set[int]:
-    """Resolve which organizations an entity belongs to via its memory links."""
+    """Resolve which organizations an entity belongs to via claim links."""
     rows = await conn.fetch(
         """
         SELECT DISTINCT w.organization_id
-        FROM entity_links el
-        JOIN memories m ON m.id = el.memory_id
-        JOIN projects p ON p.id = m.project_id
+        FROM claim_entity_links cel
+        JOIN claims c ON c.id = cel.claim_id
+        JOIN projects p ON p.id = c.project_id
         JOIN workspaces w ON w.id = p.workspace_id
-        WHERE el.entity = $1 AND w.organization_id IS NOT NULL
+        WHERE cel.entity_node_id = (SELECT id FROM nodes WHERE name = $1)
+          AND w.organization_id IS NOT NULL
         """,
         entity_name,
     )
