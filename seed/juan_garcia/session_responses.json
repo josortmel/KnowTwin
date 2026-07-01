@@ -1,0 +1,47 @@
+{
+  "session_1": {
+    "topic": "Banco Norte account management",
+    "turns": [
+      {
+        "text": "Elena Ros actually makes all the decisions for Banco Norte, not Carlos. Carlos is the account manager on paper, but Elena handles all the real approvals and negotiations.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Banco Norte", "predicate": "decide_en", "object_value": "Elena Ros", "evidence_text": "Elena Ros actually makes all the decisions for Banco Norte, not Carlos"}
+        ]}
+      },
+      {
+        "text": "The ETL pipeline really can only handle about 50K transactions per day reliably. The wiki says 100K but that is the theoretical maximum — in practice it starts failing around 80K and we have had incidents at 95K.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "ETL Pipeline", "predicate": "capacidad", "object_value": "50000 transactions/day", "evidence_text": "The ETL pipeline really can only handle about 50K transactions per day reliably"}
+        ]}
+      }
+    ]
+  },
+  "session_2": {
+    "topic": "CloudBase and infrastructure",
+    "turns": [
+      {
+        "text": "I personally negotiated a verbal agreement with CloudBase for 2-hour response on P1 incidents. The contract says 4 hours but they always respond faster because I built a good relationship with their support lead.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "2 hours verbal", "evidence_text": "I personally negotiated a verbal agreement with CloudBase for 2-hour response on P1 incidents"}
+        ]}
+      },
+      {
+        "text": "Andres Martin is the one who really runs the ETL pipeline day-to-day. Maria Lopez is the architect on paper but Andres is the one who knows every edge case, every workaround, every undocumented behavior.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "ETL Pipeline", "predicate": "domina", "object_value": "Andres Martin", "evidence_text": "Andres Martin is the one who really runs the ETL pipeline day-to-day"}
+        ]}
+      }
+    ]
+  },
+  "session_3": {
+    "topic": "Informal agreements and operational knowledge",
+    "turns": [
+      {
+        "text": "Never escalate production incidents on Friday afternoons. This is an informal agreement we made after the February 2024 incident where a Friday escalation cascaded into a weekend-long firefight. Just handle it quietly or wait until Monday unless it is truly catastrophic.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Nova Consulting", "predicate": "acuerdo_informal", "object_value": "no Friday afternoon escalations", "evidence_text": "Never escalate production incidents on Friday afternoons, informal agreement after February 2024 incident"}
+        ]}
+      }
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "plan_banco_norte": {"claims": [
+    {"subject_entity": "Banco Norte", "predicate": "decide_en", "object_value": "Carlos Ruiz", "evidence_text": "Carlos Ruiz gestiona la cuenta como responsable principal"},
+    {"subject_entity": "Banco Norte", "predicate": "contacto_clave", "object_value": "Elena Ros", "evidence_text": "Elena Ros actúa como contacto secundario para temas operativos"},
+    {"subject_entity": "Banco Norte", "predicate": "acuerdo_informal", "object_value": "SLA 4h P1", "evidence_text": "SLA contractual: 4 horas de respuesta para incidencias P1"}
+  ]},
+  "adr_postgresql": {"claims": [
+    {"subject_entity": "PostgreSQL Migration", "predicate": "responsable_real", "object_value": "Maria Lopez", "evidence_text": "Maria Lopez lidera la migración como arquitecta principal"},
+    {"subject_entity": "PostgreSQL Migration", "predicate": "timeline", "object_value": "Q3 2025", "evidence_text": "Timeline: Q3 2025"}
+  ]},
+  "contrato_cloudbase": {"claims": [
+    {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "4 hours", "evidence_text": "Incidencias P1 (críticas): 4 horas de tiempo de respuesta"}
+  ]},
+  "organigrama_equipo": {"claims": [
+    {"subject_entity": "Juan Garcia", "predicate": "responsable_real", "object_value": "Team Lead", "evidence_text": "Team Lead: Juan Garcia"}
+  ]},
+  "wiki_etl": {"claims": [
+    {"subject_entity": "ETL Pipeline", "predicate": "domina", "object_value": "Maria Lopez", "evidence_text": "Propietario: Maria Lopez"},
+    {"subject_entity": "ETL Pipeline", "predicate": "capacidad", "object_value": "100000 transactions/day", "evidence_text": "El ETL está diseñado para manejar hasta 100.000 transacciones por día"}
+  ]},
+  "correo_renovacion": {"claims": [
+    {"subject_entity": "Banco Norte", "predicate": "riesgo_activo", "object_value": "contract renewal pending", "evidence_text": "La renovación del contrato con Banco Norte está en fase de negociación"}
+  ]},
+  "informe_p1": {"claims": [
+    {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "2 hours", "evidence_text": "CloudBase respondió al incidente en 2 horas por acuerdo verbal con Juan Garcia"}
+  ]},
+  "plan_retailco": {"claims": [
+    {"subject_entity": "RetailCo", "predicate": "contacto_clave", "object_value": "Roberto Vidal", "evidence_text": "Roberto Vidal (Director de Tecnología) como contacto externo del cliente"}
+  ]}
+}
