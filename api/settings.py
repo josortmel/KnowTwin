@@ -42,7 +42,7 @@ _KNOWN_DEV_DEFAULTS = frozenset({
     _JWT_SECRET_DEV, _API_KEY_PEPPER_DEV,
     "dev_only_change_me_jwt", "dev_only_change_me_pepper", "knowtwin_test_pass",
 })
-API_KEY_PREFIX = "ecodb_"  # prefijo visible para identificar API keys de ecodb
+API_KEY_PREFIX = "knowtwin_"
 
 # CORS — restrictive policy, no wildcard, no credentials.
 _default_origins = "http://localhost:8090,http://localhost:3001"

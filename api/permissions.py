@@ -194,7 +194,61 @@ async def user_can_create_project_in_ws(conn, actor: dict, workspace_id: int) ->
 
 
 # ---------------------------------------------------------------------------
-# Memory permissions (mantienen el shape async actual de memories.py)
+# KnowTwin role-based access (P1.5)
+# ---------------------------------------------------------------------------
+
+import logging as _logging
+_log = _logging.getLogger("knowtwin.permissions")
+
+_ROLE_RANK = {"consumer": 0, "employee": 1, "curator": 2, "admin": 3}
+
+
+async def check_access(conn, actor: dict, project_id: int, required_role: str) -> str:
+    """Verify actor has at least required_role in project. Returns actual role.
+
+    Deny-by-default. Fail-closed on lookup error (403 + log).
+    Super bypasses all checks (returns 'admin').
+    """
+    if actor.get("is_super"):
+        return "admin"
+
+    required_rank = _ROLE_RANK.get(required_role)
+    if required_rank is None:
+        raise _http_403("invalid required role")
+
+    try:
+        row = await conn.fetchrow(
+            "SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2",
+            project_id, int(actor["sub"]),
+        )
+    except Exception:
+        _log.error("check_access lookup failed user=%s project=%s", actor.get("sub"), project_id)
+        raise _http_403("access denied")
+
+    if row is None:
+        raise _http_403("not a member of this project")
+
+    actual_role = row["role"]
+    actual_rank = _ROLE_RANK.get(actual_role, -1)
+    if actual_rank < required_rank:
+        raise _http_403(f"requires {required_role} role, you have {actual_role}")
+
+    return actual_role
+
+
+async def employee_owns_claim(conn, actor_id: int, claim_id) -> bool:
+    """Check if actor is the employee associated with this claim."""
+    eid = await conn.fetchval("SELECT employee_id FROM claims WHERE id = $1", claim_id)
+    return eid is not None and eid == actor_id
+
+
+def _http_403(detail: str):
+    from fastapi import HTTPException
+    return HTTPException(status_code=403, detail=detail)
+
+
+# ---------------------------------------------------------------------------
+# Memory permissions (EcoDB legacy — kept for memories.py compatibility)
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------

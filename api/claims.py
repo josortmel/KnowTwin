@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from auth import get_current_user
 from db import get_pool
 from embeddings_client import embed_text
-from permissions import no_null_bytes as _no_null_bytes
+from permissions import check_access, no_null_bytes as _no_null_bytes
 
 log = logging.getLogger("knowtwin.claims")
 
@@ -138,6 +138,8 @@ def _claim_row_to_response(row) -> dict:
 async def create_claim(body: ClaimCreate, actor: dict = Depends(get_current_user)):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        await check_access(conn, actor, body.project_id, "curator")
+
         agent_id = None
         if body.agent_identifier:
             agent_row = await conn.fetchrow(
@@ -181,6 +183,13 @@ async def promote_claim(claim_id: UUID, body: PromoteRequest, actor: dict = Depe
 
     pool = await get_pool()
     async with pool.acquire() as conn:
+        claim_project = await conn.fetchval(
+            "SELECT project_id FROM claims WHERE id = $1", claim_id,
+        )
+        if claim_project is None:
+            raise HTTPException(404, "claim not found")
+        await check_access(conn, actor, claim_project, "curator")
+
         current = await conn.fetchrow(
             "SELECT corroboration_level, source_type, embedding FROM claims WHERE id = $1",
             claim_id,
