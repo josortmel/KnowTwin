@@ -43,7 +43,7 @@ COPY --chown=apiuser:apiuser \
     api/memories.py api/onboarding.py api/org_settings.py api/pagination.py api/parsers.py \
     api/permissions.py api/projects.py api/providers.py api/rate_limit.py api/reranker.py \
     api/search.py api/settings.py api/shared_models.py api/stats.py api/teams.py \
-    api/telemetry.py api/telemetry_api.py api/users.py api/worker.py api/workspaces.py \
+    api/telemetry.py api/telemetry_api.py api/twin.py api/users.py api/worker.py api/workspaces.py \
     ./
 
 COPY --chown=apiuser:apiuser api/tests/ ./tests/

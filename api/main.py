@@ -293,6 +293,10 @@ def create_app(environment: str = None) -> FastAPI:
     import coverage
     app.include_router(coverage.router)
 
+    # Twin router (P1.16) — twin query pipeline (GAMR → claims).
+    import twin
+    app.include_router(twin.router)
+
     # Telemetry router (Fase B.1) — internal-only injection telemetry.
     import telemetry_api
     app.include_router(telemetry_api.router)
