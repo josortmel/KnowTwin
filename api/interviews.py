@@ -7,7 +7,7 @@ import os
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
@@ -93,7 +93,8 @@ async def get_session(
         )
         if row is None:
             raise HTTPException(404, "session not found")
-        await check_access(conn, actor, row["project_id"], "employee")
+        role = await check_access(conn, actor, row["project_id"], "employee")
+        _check_session_ownership(actor, row, role)
         return _session_dict(row)
 
 
@@ -198,6 +199,64 @@ async def respond(
             "state": result["state"],
             "coverage_pct": coverage,
         }
+
+
+_MEDIA_STORE = os.environ.get("MEDIA_STORE_DIR", "/app/media")
+
+
+@router.post("/{session_id}/voice")
+async def voice(
+    session_id: UUID,
+    file: UploadFile = File(...),
+    actor: dict = Depends(get_current_user),
+) -> dict:
+    """Voice note → STT → same /respond path."""
+    import uuid as _uuid
+    from parsers import AUDIO_EXTENSIONS, transcribe_audio
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM interview_sessions WHERE id = $1", session_id
+        )
+        if row is None:
+            raise HTTPException(404, "session not found")
+        await check_access(conn, actor, row["project_id"], "employee")
+        if row["status"] != "in_progress":
+            raise HTTPException(409, f"session is {row['status']}, not in_progress")
+
+    if not file.filename:
+        raise HTTPException(400, "file has no name")
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in AUDIO_EXTENSIONS:
+        raise HTTPException(422, f"unsupported audio format: {ext}")
+
+    os.makedirs(_MEDIA_STORE, exist_ok=True)
+    stored = os.path.join(_MEDIA_STORE, f"{_uuid.uuid4()}{ext}")
+    content = await file.read()
+    with open(stored, "wb") as f:
+        f.write(content)
+
+    try:
+        result = await transcribe_audio(stored)
+        text = result.get("text", "") if isinstance(result, dict) else str(result)
+        if hasattr(result, "text"):
+            text = result.text
+    except ValueError as exc:
+        os.unlink(stored)
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        os.unlink(stored)
+        raise HTTPException(500, f"transcription failed: {type(exc).__name__}")
+    finally:
+        if os.path.exists(stored):
+            os.unlink(stored)
+
+    if not text or not text.strip():
+        raise HTTPException(422, "transcription produced no text")
+
+    body = RespondRequest(text=text.strip()[:5000])
+    return await respond(session_id, body, actor)
 
 
 @router.post("/{session_id}/close")
