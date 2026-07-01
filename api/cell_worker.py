@@ -324,7 +324,13 @@ def _verifier_handler(pool, aid, cfg, ps, pe):
     return run_verifier(pool, cfg.get("project_id", 1), aid)
 
 
+def _curator_post_handler(pool, aid, cfg, ps, pe):
+    from curator_post import run_curator_post
+    return run_curator_post(pool, cfg.get("session_id", ""))
+
+
 _BUILTIN_DISPATCH = {
     ("curator_pre", None): _curator_pre_handler,
+    ("curator_post", None): _curator_post_handler,
     ("verifier", None): _verifier_handler,
 }
