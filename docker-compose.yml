@@ -1,0 +1,200 @@
+# KnowTwin — Docker Compose (forked from EcoDB, P1.1)
+#
+# Six-service architecture (Spec §1.2): db · tei · ner · api · frontend · cell.
+#
+# Host ports are OFFSET to coexist with a running EcoDB (which holds
+# 5435/8080/8091/8092):  db 5436 · api 8090 · ner 8093 · tei internal-only ·
+# frontend 3001. Container-internal ports stay native.
+#
+# Profiles:
+#   (default)  db, tei, ner, api, frontend
+#   cell       knowtwin-cell  — scipy/metacognition-bound, unadapted until P1.9.
+#              Behind a profile so the default `up -d` healthy-count is
+#              deterministic. Activate:  docker compose --profile cell up -d
+#
+# NOTE (P1.1): knowtwin-tei is a GPU Jina-v4 service. On a shared box where
+# EcoDB already holds the GPU it will OOM — its LIVE boot is deferred (GPU
+# window / P1.3). The api is DECOUPLED from tei (no depends_on, /health soft-
+# checks embeddings) so the core boots without it.
+
+services:
+
+  knowtwin-db:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.postgres
+    image: knowtwin-postgres:0.1.0
+    container_name: knowtwin-db
+    environment:
+      POSTGRES_DB: knowtwin
+      POSTGRES_USER: knowtwin
+      POSTGRES_PASSWORD: ${KNOWTWIN_DB_PASSWORD:-knowtwin_test_pass}
+    ports:
+      # localhost-only — auth is enforced at the API layer, not the DB layer.
+      - "127.0.0.1:5436:5432"
+    volumes:
+      - knowtwin_data:/var/lib/postgresql/data
+      # CONSOLIDATED schema. initdb.d runs ONLY on an empty volume. P1.1 mounts
+      # the minimal baseline; trigger_age_sync.sql is mounted at P1.2 (it needs
+      # nodes/triples tables that don't exist yet).
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knowtwin -d knowtwin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - knowtwin-net
+
+  knowtwin-tei:
+    build:
+      context: ./tei
+    image: knowtwin-tei:0.1.0
+    container_name: knowtwin-tei
+    environment:
+      MODEL_NAME: jinaai/jina-embeddings-v4
+      EMBEDDING_BACKEND: local
+      EMBEDDING_DIM: "512"
+      MAX_TEXT_LEN: "32000"
+    # Internal-only — no host port (reached as http://knowtwin-tei:8090 on knowtwin-net).
+    volumes:
+      - ${HF_CACHE_PATH:-hf_cache}:/cache/huggingface
+      - torch_cache:/cache/torch
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    shm_size: '1g'
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8090/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    networks:
+      - knowtwin-net
+
+  knowtwin-ner:
+    build:
+      context: ./ner
+    image: knowtwin-ner:0.1.0
+    container_name: knowtwin-ner
+    ports:
+      # Host 8093 (EcoDB ner holds 8092). Internal: http://knowtwin-ner:8091
+      - "8093:8091"
+    volumes:
+      - api_hf_cache:/app/.cache/huggingface
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - CUDA_VISIBLE_DEVICES=
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - knowtwin-net
+
+  knowtwin-api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    image: knowtwin-api:0.1.0
+    container_name: knowtwin-api
+    environment:
+      ENVIRONMENT: ${KNOWTWIN_ENV:-development}
+      DATABASE_URL: postgresql://knowtwin:${KNOWTWIN_DB_PASSWORD:-knowtwin_test_pass}@knowtwin-db:5432/knowtwin
+      EMBEDDINGS_URL: http://knowtwin-tei:8090
+      EMBEDDINGS_TIMEOUT: "60.0"
+      JWT_SECRET: ${KNOWTWIN_JWT_SECRET:-dev_only_change_me_jwt}
+      JWT_TTL_SECONDS: "3600"
+      API_KEY_PEPPER: ${KNOWTWIN_API_KEY_PEPPER:-dev_only_change_me_pepper}
+      CORS_ORIGINS: ${KNOWTWIN_CORS_ORIGINS:-http://localhost:8090,http://localhost:3001}
+      NER_SERVICE_URL: http://knowtwin-ner:8091
+      # LLM off for P1.1 — no llama/cell provider wired yet (keeps boot self-contained).
+      ECODB_LLM_PROVIDER: "off"
+      ENCRYPTION_KEY: ${KNOWTWIN_ENCRYPTION_KEY}
+      INTERNAL_BROADCAST_SECRET: ${KNOWTWIN_INTERNAL_BROADCAST_SECRET:-}
+    ports:
+      - "8090:8080"
+    depends_on:
+      # DECOUPLED from tei (deferred GPU boot). api boots without embeddings;
+      # /health soft-checks tei and still returns 200 when it's down.
+      knowtwin-db:
+        condition: service_healthy
+      knowtwin-ner:
+        condition: service_healthy
+    volumes:
+      - knowtwin_media:/app/media
+      - ./sql:/app/sql:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - knowtwin-net
+
+  knowtwin-frontend:
+    # P1.1 scaffold: static placeholder served by python http.server (zero extra
+    # image pull — reuses python:3.12-slim). Real Vite/React app lands at P1.18.
+    image: python:3.12-slim
+    container_name: knowtwin-frontend
+    working_dir: /site
+    command: ["python", "-m", "http.server", "3000"]
+    volumes:
+      - ./frontend:/site:ro
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - knowtwin-net
+
+  knowtwin-cell:
+    # 6th service (Spec §1.2). scipy/metacognition-bound, EcoDB builtin cells not
+    # yet stripped — UNADAPTED until P1.9 and cannot boot healthy on the P1.1
+    # minimal schema. DEFINED for architectural completeness, behind profile `cell`.
+    image: knowtwin-api:0.1.0
+    container_name: knowtwin-cell
+    entrypoint: ["gosu", "apiuser", "python", "cell_worker.py"]
+    profiles:
+      - cell
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgresql://knowtwin:${KNOWTWIN_DB_PASSWORD:-knowtwin_test_pass}@knowtwin-db:5432/knowtwin
+      ECODB_API_INTERNAL_URL: http://knowtwin-api:8080
+      EMBEDDINGS_URL: http://knowtwin-tei:8090
+      ENCRYPTION_KEY: ${KNOWTWIN_ENCRYPTION_KEY}
+      INTERNAL_BROADCAST_SECRET: ${KNOWTWIN_INTERNAL_BROADCAST_SECRET:-}
+    depends_on:
+      knowtwin-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - knowtwin-net
+
+volumes:
+  knowtwin_data:
+  knowtwin_media:
+  api_hf_cache:
+  torch_cache:
+  hf_cache:
+
+networks:
+  knowtwin-net:
+    driver: bridge

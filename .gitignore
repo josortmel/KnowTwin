@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend (P1.18)
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Media / data
+media/
+backups/
+
+# OS / editor
+.DS_Store
+Thumbs.db

@@ -1,0 +1,52 @@
+# EcoDB — Dockerfile.postgres
+# PG16 + pgvector + Apache AGE 1.5.0 + pg_trgm
+# Plan maestro v3 §6.1.
+#
+# AGE no tiene release estable para PG17, por eso PG16. Migrar cuando upstream tenga release.
+
+FROM pgvector/pgvector:pg16
+
+# Bootstrap de ca-certificates desde un .deb local (offline) para romper el ciclo
+# de huevo-y-gallina cuando Fastly devuelve 451 sobre HTTP plano:
+#   - apt.postgresql.org rechaza HTTP (esperable, politica del repo).
+#   - deb.debian.org tambien rechaza HTTP en sesiones nuevas (Fastly anti-batch).
+#   - apt-get install ca-certificates por HTTP falla → no podemos pasar a HTTPS.
+# Con dpkg -i offline instalamos los certs sin red, despues forzamos ambos sources
+# a HTTPS y todo lo demas (build-essential, postgresql-server-dev-16, git clone)
+# va por HTTPS validado.
+#
+# ca-certificates 20230311+deb12u1 (bookworm)
+# SHA256: 0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed
+# Origen: https://deb.debian.org/debian/pool/main/c/ca-certificates/ca-certificates_20230311+deb12u1_all.deb
+COPY ca-certificates.deb /tmp/ca-certificates.deb
+
+# DT6 (adv-code): verificar checksum del .deb antes de dpkg -i. Detecta corrupcion
+# o sustitucion en el contexto de build. sha256sum viene en coreutils, ya en la imagen.
+RUN echo "0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed  /tmp/ca-certificates.deb" | sha256sum --check \
+    && dpkg -i /tmp/ca-certificates.deb \
+    && rm /tmp/ca-certificates.deb \
+    && sed -i 's|http://deb\.debian\.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's|http://apt\.postgresql\.org|https://apt.postgresql.org|g' /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        libreadline-dev \
+        zlib1g-dev \
+        flex \
+        bison \
+        postgresql-server-dev-16 \
+        git \
+    && git clone \
+        --branch release/PG16/1.5.0 \
+        --depth 1 \
+        https://github.com/apache/age.git \
+        /tmp/age \
+    && cd /tmp/age \
+    && make install \
+    && rm -rf /tmp/age \
+    && apt-get purge -y --auto-remove build-essential libreadline-dev zlib1g-dev flex bison postgresql-server-dev-16 git \
+    && rm -rf /var/lib/apt/lists/*
+
+# pg_trgm viene en contrib y ya esta presente en la imagen base (extension disponible
+# para CREATE EXTENSION sin instalacion adicional).
+# ca-certificates se queda instalado al final (no se purga) para runtime HTTPS.
