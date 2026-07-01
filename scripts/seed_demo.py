@@ -138,13 +138,13 @@ async def main():
                     await conn.execute(
                         "INSERT INTO claims (user_id, project_id, subject_entity, predicate, "
                         "object_value, evidence_text, source_type, trust_tier, sensitivity, "
-                        "corroboration_level, source_id) "
-                        "VALUES ($1, $2, $3, $4, $5, $6, 'seed_demo', $7, 'public', "
-                        "'single_source', $8) ON CONFLICT DO NOTHING",
+                        "corroboration_level, source_id, tags) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, 'document', $7, 'public', "
+                        "'single_source', $8, $9::text[]) ON CONFLICT DO NOTHING",
                         admin_id, proj_id,
                         cd["subject_entity"], cd["predicate"],
                         cd.get("object_value"), cd["evidence_text"],
-                        tier, str(doc_id),
+                        tier, str(doc_id), ["demo_seed"],
                     )
         print(f"   8 documents + claims seeded")
 
@@ -162,13 +162,13 @@ async def main():
                     await conn.execute(
                         "INSERT INTO claims (user_id, project_id, subject_entity, predicate, "
                         "object_value, evidence_text, source_type, employee_id, session_id, "
-                        "sensitivity, corroboration_level) "
-                        "VALUES ($1, $2, $3, $4, $5, $6, 'seed_demo', $7, $8, "
-                        "'restricted', 'single_source')",
+                        "sensitivity, corroboration_level, tags) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, 'interview', $7, $8, "
+                        "'restricted', 'single_source', $9::text[])",
                         emp_id, proj_id,
                         cd["subject_entity"], cd["predicate"],
                         cd.get("object_value"), cd["evidence_text"],
-                        emp_id, sid,
+                        emp_id, sid, ["demo_seed"],
                     )
             print(f"   {session_key}: {len(session_data['turns'])} turns")
 
@@ -206,7 +206,7 @@ async def main():
         print(f"   Contradictions: {resolved} resolved_in_favor, {disputed} disputed")
 
         tacit = await conn.fetchval(
-            "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo' AND session_id IS NOT NULL",
+            "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'interview' AND tags @> ARRAY['demo_seed']",
             proj_id,
         )
         print(f"   Tacit claims from interviews: {tacit}")

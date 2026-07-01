@@ -79,14 +79,11 @@ def admin_key():
 
 def test_demo_claims_exist():
     """Demo has claims from both documents and interviews."""
-    total = _run(_dbval(
-        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo'", _PID
-    ))
     doc_count = _run(_dbval(
-        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo' AND session_id IS NULL", _PID
+        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'document' AND tags @> ARRAY['demo_seed']", _PID
     ))
     tacit_count = _run(_dbval(
-        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo' AND session_id IS NOT NULL", _PID
+        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'interview' AND tags @> ARRAY['demo_seed']", _PID
     ))
     assert doc_count >= 5, f"expected ≥5 doc claims, got {doc_count}"
     assert tacit_count >= 4, f"expected ≥4 tacit claims, got {tacit_count}"
@@ -98,7 +95,7 @@ def test_star_tacit_claims_present():
     for subj in star_subjects:
         count = _run(_dbval(
             "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND subject_entity = $2 "
-            "AND source_type = 'seed_demo' AND session_id IS NOT NULL",
+            "AND source_type = 'interview' AND tags @> ARRAY['demo_seed']",
             _PID, subj,
         ))
         assert count >= 1, f"missing tacit claim for {subj}"

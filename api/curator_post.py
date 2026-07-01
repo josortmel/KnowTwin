@@ -70,8 +70,7 @@ async def run_curator_post(pool: asyncpg.Pool, session_id: str) -> dict:
                 SELECT id, subject_entity, predicate, object_value, evidence_text,
                        corroboration_level, dispute_state, sensitivity
                 FROM claims
-                WHERE session_id = $1 AND source_type IN ('interview', 'seed_demo')
-                  AND session_id IS NOT NULL
+                WHERE session_id = $1 AND source_type = 'interview'
                   AND corroboration_level IN ('single_source','corroborated_by_employee')
             """, session_id)
 
@@ -94,8 +93,7 @@ async def run_curator_post(pool: asyncpg.Pool, session_id: str) -> dict:
                            dispute_state, doc_strength, source_id
                     FROM claims
                     WHERE project_id = $1 AND subject_entity = $2 AND predicate = $3
-                      AND source_type IN ('document', 'seed_demo')
-                      AND session_id IS NULL
+                      AND source_type = 'document'
                       AND corroboration_level IN ('single_source','corroborated','corroborated_by_employee','validated')
                 """, pid, tc["subject_entity"], tc["predicate"])
 
