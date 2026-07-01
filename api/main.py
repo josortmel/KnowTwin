@@ -289,6 +289,10 @@ def create_app(environment: str = None) -> FastAPI:
     import org_settings
     app.include_router(org_settings.router)
 
+    # Coverage router (P1.12) — entity coverage model.
+    import coverage
+    app.include_router(coverage.router)
+
     # Telemetry router (Fase B.1) — internal-only injection telemetry.
     import telemetry_api
     app.include_router(telemetry_api.router)
