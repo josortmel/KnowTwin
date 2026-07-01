@@ -162,21 +162,21 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
                 INSERT INTO claims
                 (user_id, project_id, subject_entity, predicate, object_value,
                  evidence_text, source_type, employee_id, session_id, sensitivity,
-                 corroboration_level, criticality, novelty)
+                 corroboration_level, criticality)
                 VALUES ($1, $2, $3, $4, $5, $6, 'interview', $7, $8, 'restricted',
-                        'single_source', $9, $10)
+                        'single_source', $9)
                 RETURNING id
                 """,
                 state.employee_id, state.project_id,
                 subject, cd.get("predicate", "relates_to")[:200],
                 cd.get("object_value"), cd["evidence_text"][:2000],
                 state.employee_id, state.session_id,
-                criticality, novelty,
+                criticality,
             )
             claims_created.append(str(claim_id))
             state.claims_this_session.append(str(claim_id))
 
-            # Promote + embed immediately
+            # Embed immediately — gate invariant: single_source must have embedding
             try:
                 from embeddings_client import embed_text
                 vec = await embed_text(cd["evidence_text"][:2000], "passage")
@@ -185,8 +185,18 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
                         "UPDATE claims SET embedding = $1::vector WHERE id = $2",
                         str(vec), claim_id,
                     )
-            except Exception:
-                pass
+                else:
+                    log.warning("Embed returned None for claim %s — removing (gate invariant)", claim_id)
+                    await conn.execute("DELETE FROM claims WHERE id = $1", claim_id)
+                    claims_created.pop()
+                    state.claims_this_session.pop()
+                    continue
+            except Exception as exc:
+                log.warning("Embed failed for claim %s — removing (gate invariant): %r", claim_id, exc)
+                await conn.execute("DELETE FROM claims WHERE id = $1", claim_id)
+                claims_created.pop()
+                state.claims_this_session.pop()
+                continue
 
             claim_value = criticality * novelty
             if novelty >= 0.5:

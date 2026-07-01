@@ -1,0 +1,1 @@
+{"claims": [{"subject_entity": "advtest_CloudBase", "predicate": "sla_hours", "object_value": "1 hour", "evidence_text": "Employee contradicts: SLA is actually 1 hour not 4"}]}
