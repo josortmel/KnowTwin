@@ -424,21 +424,5 @@ async def resolve_agent_for_actor(conn, actor: dict, agent_identifier: str) -> d
     raise HTTPException(404, f"agent {agent_identifier!r} not found")
 
 
-async def resolve_cluster_for_actor(conn, actor: dict, cluster_id) -> dict:
-    """Resolve cluster + verify agent ownership. 404 anti-discovery."""
-    from fastapi import HTTPException
-    from uuid import UUID as _UUID
-    cid = cluster_id if isinstance(cluster_id, _UUID) else _UUID(str(cluster_id))
-    row = await conn.fetchrow(
-        "SELECT mc.*, a.user_id AS agent_user_id, a.identifier AS agent_identifier "
-        "FROM memory_clusters mc "
-        "JOIN agents a ON a.id = mc.agent_id "
-        "WHERE mc.id = $1", cid)
-    if row is None:
-        raise HTTPException(404)
-    if actor.get("is_super"):
-        return dict(row)
-    if row["agent_user_id"] is not None \
-       and int(row["agent_user_id"]) == int(actor["sub"]):
-        return dict(row)
-    raise HTTPException(404)
+# resolve_cluster_for_actor REMOVED — the clusters table is dropped in KnowTwin
+# (metacognition stripped; only caller was the stripped clusters.py router).

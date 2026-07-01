@@ -549,8 +549,7 @@ async def stats_metacognition(actor: dict = Depends(get_current_user)) -> Metaco
         if isinstance(_raw_metrics, str):
             _raw_metrics = _json.loads(_raw_metrics)
         cm = (_raw_metrics or {}).get("clustering", {})
-        avg_size = await conn.fetchval(
-            "SELECT AVG(array_length(member_ids,1)) FROM memory_clusters WHERE status='active'")
+        avg_size = None  # clusters table dropped in KnowTwin (metacognition stripped)
 
         # Foresight
         active_f = await conn.fetchval("""

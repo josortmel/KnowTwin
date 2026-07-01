@@ -26,14 +26,20 @@ RUN mkdir -p /app/.cache/huggingface /app/media && chown -R apiuser:apiuser /app
 COPY --chown=apiuser:apiuser api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-cache reranker model (GAMR — search.py) BEFORE copying app modules, so code
+# edits don't invalidate this layer (one-time ~90MB fetch, cached thereafter).
+# Revision must match RERANKER_REVISION at runtime (same SHA = same HF cache key).
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', revision='c5ee24cb16019beea0893ab7796b1df96625c6b8')" \
+    && chown -R apiuser:apiuser /app/.cache
+
 # Copia explicita de modulos del API (strip-list de EcoDB metacognition NO incluido:
-# clusters/briefing/foresights/cases/skills/cells + migrate_3_0c omitidos).
+# clusters/briefing/foresights/cases/skills/cells + migrate_3_0c + migrations omitidos).
 COPY --chown=apiuser:apiuser \
     api/admin.py api/agents.py api/auth.py api/background.py api/bootstrap_first_apikey.py \
     api/cell_configs.py api/cell_templates.py api/cell_worker.py api/chunker.py api/classifier.py \
     api/crypto.py api/db.py api/documents.py api/embeddings_client.py api/entity_normalization.py \
     api/events.py api/gliner_service.py api/graph.py api/llm_provider.py api/main.py \
-    api/memories.py api/migrations.py api/onboarding.py api/pagination.py api/parsers.py \
+    api/memories.py api/onboarding.py api/pagination.py api/parsers.py \
     api/permissions.py api/projects.py api/providers.py api/rate_limit.py api/reranker.py \
     api/search.py api/settings.py api/shared_models.py api/stats.py api/teams.py \
     api/telemetry.py api/telemetry_api.py api/users.py api/worker.py api/workspaces.py \
@@ -41,11 +47,6 @@ COPY --chown=apiuser:apiuser \
 
 COPY --chown=root:root api/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-
-# Pre-cache reranker model (GAMR Etapa 10 — search.py). Revision debe coincidir con
-# RERANKER_REVISION en runtime (mismo SHA = misma cache key HF).
-RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', revision='c5ee24cb16019beea0893ab7796b1df96625c6b8')"
-RUN chown -R apiuser:apiuser /app/.cache
 
 EXPOSE 8080
 

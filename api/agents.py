@@ -55,7 +55,6 @@ class AgentSummary(BaseModel):
     cognition_class: str
     last_seen: Optional[datetime] = None
     cell_configs_count: int
-    clusters_count: int
     last_cell_run: Optional[datetime] = None
 
 
@@ -133,8 +132,6 @@ _AGENT_SUMMARY_SELECT = """
            a.cognition_class, a.last_seen,
            (SELECT COUNT(*) FROM cell_task_configs c WHERE c.agent_id = a.id)
                AS cell_configs_count,
-           (SELECT COUNT(*) FROM memory_clusters mc WHERE mc.agent_id = a.id)
-               AS clusters_count,
            (SELECT MAX(finished_at) FROM cell_runs cr WHERE cr.agent_id = a.id)
                AS last_cell_run
     FROM agents a

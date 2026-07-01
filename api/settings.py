@@ -36,6 +36,12 @@ JWT_TTL_SECONDS = int(os.environ.get("JWT_TTL_SECONDS", "3600"))  # 1h default
 # API keys
 _API_KEY_PEPPER_DEV = "DEV_ONLY_PEPPER_CHANGE_IN_PRODUCTION_VIA_ENV_VAR"
 API_KEY_PEPPER = os.environ.get("API_KEY_PEPPER", _API_KEY_PEPPER_DEV)
+# VS2: known dev / docker-compose fallback secret literals. Rejected fail-closed
+# in production so a stack booted with the compose defaults can't run exposed.
+_KNOWN_DEV_DEFAULTS = frozenset({
+    _JWT_SECRET_DEV, _API_KEY_PEPPER_DEV,
+    "dev_only_change_me_jwt", "dev_only_change_me_pepper", "knowtwin_test_pass",
+})
 API_KEY_PREFIX = "ecodb_"  # prefijo visible para identificar API keys de ecodb
 
 # CORS — restrictive policy, no wildcard, no credentials.
@@ -86,13 +92,13 @@ def validate_production_secrets() -> None:
     # for undefined variables — without these checks the API would start with
     # JWT_SECRET="" → any client could forge tokens with HMAC-SHA256("", payload).
     # 16 chars minimum; recommended 32+ bytes random hex (~64 chars).
-    if not JWT_SECRET or len(JWT_SECRET) < 16 or JWT_SECRET == _JWT_SECRET_DEV:
+    if not JWT_SECRET or len(JWT_SECRET) < 16 or JWT_SECRET in _KNOWN_DEV_DEFAULTS:
         raise RuntimeError(
             "JWT_SECRET vacio, demasiado corto (<16 chars) o con valor de desarrollo "
             "en ENVIRONMENT=production. Configura JWT_SECRET (random 32+ bytes) "
             "via env var antes de arrancar. Generar con: openssl rand -hex 32"
         )
-    if not API_KEY_PEPPER or len(API_KEY_PEPPER) < 16 or API_KEY_PEPPER == _API_KEY_PEPPER_DEV:
+    if not API_KEY_PEPPER or len(API_KEY_PEPPER) < 16 or API_KEY_PEPPER in _KNOWN_DEV_DEFAULTS:
         raise RuntimeError(
             "API_KEY_PEPPER vacio, demasiado corto (<16 chars) o con valor de desarrollo "
             "en ENVIRONMENT=production. Configura API_KEY_PEPPER (random 32+ bytes) "
@@ -190,7 +196,7 @@ RERANKER_MODEL_ALLOWLIST = {
 }
 
 # LLM provider for HyDE, telemetry, classifier (Adendum A, 2026-05-14)
-ECODB_LLM_PROVIDER = os.environ.get("ECODB_LLM_PROVIDER", "local")
+ECODB_LLM_PROVIDER = os.environ.get("ECODB_LLM_PROVIDER", "off")  # AU1: default off (no llama/cell provider wired)
 LLAMA_CPP_URL = os.environ.get("LLAMA_CPP_URL", "http://llm:8080")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 HAIKU_MODEL = os.environ.get("HAIKU_MODEL", "claude-haiku-4-5-20251001")
@@ -205,21 +211,6 @@ CELL_LLM_URL = os.environ.get("CELL_LLM_URL", "https://api.deepseek.com")
 CELL_LLM_KEY = os.environ.get("CELL_LLM_KEY", "")
 CELL_LLM_MODEL = os.environ.get("CELL_LLM_MODEL", "deepseek-chat")
 
-# --- Consolidation parameters ---
-CONSOLIDATION_ALPHA = float(os.environ.get("CONSOLIDATION_ALPHA", "0.70"))
-CONSOLIDATION_BETA1 = float(os.environ.get("CONSOLIDATION_BETA1", "0.50"))
-CONSOLIDATION_BETA2 = float(os.environ.get("CONSOLIDATION_BETA2", "0.50"))
-CONSOLIDATION_BETA3 = float(os.environ.get("CONSOLIDATION_BETA3", "0.0"))
-THRESHOLD_NARRATIVE = float(os.environ.get("THRESHOLD_NARRATIVE", "0.45"))
-THRESHOLD_WORK = float(os.environ.get("THRESHOLD_WORK", "0.55"))
-MIN_CLUSTER_SIZE = int(os.environ.get("MIN_CLUSTER_SIZE", "2"))
-MAX_MEMORIES_PER_WINDOW = int(os.environ.get("MAX_MEMORIES_PER_WINDOW", "500"))
-
-# --- Foresight extraction ---
-FORESIGHT_CONFIDENCE_THRESHOLD = float(os.environ.get("FORESIGHT_CONFIDENCE_THRESHOLD", "0.70"))
-FORESIGHT_SCAN_HOURS = int(os.environ.get("FORESIGHT_SCAN_HOURS", "48"))
-
-# --- Skill distillation ---
-SKILL_MIN_CASES = int(os.environ.get("SKILL_MIN_CASES", "3"))
-SKILL_MIN_SUCCESS_RATE = float(os.environ.get("SKILL_MIN_SUCCESS_RATE", "0.60"))
-SKILL_STALE_THRESHOLD = float(os.environ.get("SKILL_STALE_THRESHOLD", "0.30"))
+# DC1: EcoDB consolidation/foresight/skill-distillation params REMOVED — those
+# metacognition cells are not part of KnowTwin (clusters table dropped). Curator/
+# Verifier cell config lives in the DB (cell_task_configs), not here.

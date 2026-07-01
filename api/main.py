@@ -1,5 +1,5 @@
 """
-EcoDB API — .
+KnowTwin API.
 
 Endpoints en este sprint:
 - GET  /health        — liveness check, sin dependencias externas, siempre 200 OK.
@@ -13,9 +13,8 @@ Hardening de seguridad:
 - X-Content-Type-Options + Referrer-Policy en TODAS las
   respuestas, Server header suprimido a nivel uvicorn (--no-server-header).
 - CORS restrictivo — origins explicitos, credentials=False.
-- SecurityHeadersMiddleware migrado a ASGI puro para que las
-  excepciones DB (que llegan en 
-  y dejen respuestas 500 sin headers.
+- SecurityHeadersMiddleware en ASGI puro: los headers se aplican siempre,
+  incluso en respuestas 500 originadas por excepciones no-HTTP.
 
 Pendiente (deuda anotada):
 - VS4 → mover api_version/schema_version a /admin/health (Fase 2).

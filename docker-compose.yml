@@ -59,7 +59,8 @@ services:
       MAX_TEXT_LEN: "32000"
     # Internal-only — no host port (reached as http://knowtwin-tei:8090 on knowtwin-net).
     volumes:
-      - ${HF_CACHE_PATH:-hf_cache}:/cache/huggingface
+      # :ro — trust_remote_code=True could otherwise write to the host HF cache.
+      - ${HF_CACHE_PATH:-hf_cache}:/cache/huggingface:ro
       - torch_cache:/cache/torch
     deploy:
       resources:
@@ -84,9 +85,8 @@ services:
       context: ./ner
     image: knowtwin-ner:0.1.0
     container_name: knowtwin-ner
-    ports:
-      # Host 8093 (EcoDB ner holds 8092). Internal: http://knowtwin-ner:8091
-      - "8093:8091"
+    # VS4: no host port — ner is reached only internally as http://knowtwin-ner:8091
+    # by api/worker on knowtwin-net. Nothing external needs it.
     volumes:
       - api_hf_cache:/app/.cache/huggingface
     environment:

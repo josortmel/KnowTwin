@@ -798,35 +798,10 @@ class SearchInDocumentRequest(BaseModel):
 
 
 async def _get_related_clusters(conn, query_embedding, query_text, actor, limit=3):
-    actor_id = int(actor["sub"])
-    vis_pids = await visible_project_ids(conn, actor)
-    if not vis_pids:
-        return []
-    try:
-        rows = await conn.fetch("""
-            SELECT mc.id, mc.level, mc.label,
-                   1 - (mc.centroid <=> $1::vector) AS vector_score,
-                   ts_rank(to_tsvector('spanish', mc.label), plainto_tsquery('spanish', $4)) AS bm25_score
-            FROM memory_clusters mc
-            JOIN agents a ON a.id = mc.agent_id
-            WHERE mc.status = 'active'
-              AND (1 - (mc.centroid <=> $1::vector) > 0.5
-                   OR ts_rank(to_tsvector('spanish', mc.label), plainto_tsquery('spanish', $4)) > 0.1)
-              AND a.user_id = $2
-              AND mc.member_ids && (
-                  SELECT coalesce(array_agg(m.id), ARRAY[]::uuid[])
-                  FROM memories m
-                  WHERE m.project_id = ANY($3::int[])
-              )
-            ORDER BY (1 - (mc.centroid <=> $1::vector)
-                      + ts_rank(to_tsvector('spanish', mc.label), plainto_tsquery('spanish', $4))) DESC
-            LIMIT $5
-        """, query_embedding, actor_id, list(vis_pids), query_text, limit)
-        return [dict(r) for r in rows]
-    except Exception as _rc_err:
-        import logging as _rc_log
-        _rc_log.getLogger("ecodb.search").warning("related_clusters query failed: %r", _rc_err)
-        return []
+    # The clusters table (metacognition) is dropped in KnowTwin — cluster
+    # enrichment yields nothing. cluster_mode plumbing kept as a harmless no-op;
+    # the search rewrite over the claims table (P1.4/GAMR) removes it fully.
+    return []
 
 
 class MergedResultItem(BaseModel):

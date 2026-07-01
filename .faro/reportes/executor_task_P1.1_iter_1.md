@@ -7,6 +7,18 @@
 
 ---
 
+## iter-2 addendum (adv-code + adv-seg loop 1 — consolidated fixes)
+
+Applied in one pass + ONE fast rebuild (38.9s, **zero wheel downloads** — cpu-torch pip layer cache-hit), then swapped live. **Re-verified green:** 4 services healthy, /health 200, no traceback, identity.py absent.
+
+- **VS2** (blocker): `validate_production_secrets()` now rejects a `_KNOWN_DEV_DEFAULTS` frozenset (compose fallbacks `dev_only_change_me_jwt`/`dev_only_change_me_pepper`/`knowtwin_test_pass` + the dev sentinels), fail-closed in production.
+- **VS1/VS6**: `scripts/setup.{sh,ps1}` rewritten KnowTwin-native — `KNOWTWIN_*` env names that actually feed compose, `knowtwin-api`, no `restart mcp`. `grep ECODB_/ecodb-api/restart mcp` in scripts → 0.
+- **BC1/BC2**: pruned `memory_clusters` (dropped table) from ALL wired modules — agents.py (`clusters_count` field+subquery), permissions.py (`resolve_cluster_for_actor` deleted), search.py (`_get_related_clusters`→no-op `return []`), stats.py (avg_cluster_size→None). `grep memory_clusters` wired path → 0 (cell_worker retained, profiled-off, P1.9). KEPT cell_task_configs/cell_runs/cell_prompt_templates.
+- **DC1**: removed dead consolidation/foresight/skill settings block from settings.py.
+- **AU1**: `ECODB_LLM_PROVIDER` default `local`→`off`. **DC2**: removed orphaned `api/migrations.py` (+ Dockerfile COPY). **VS5**: `.env.example` DB_PASSWORD → change_me placeholder. **VS3**: tei HF cache bind `:ro`. **VS4**: dropped ner host publish (internal-only). **IC1/IC2**: retargeted stale EcoDB docstrings + removed the corrupt main.py cruft line.
+- **D-P1.1-4 DONE**: CPU-torch pin applied + Dockerfile reranker-precache reordered before COPY. api image **10.8GB → 4.96GB (−5.84GB)**; rebuild after code edits = 38.9s, zero wheel downloads. (Pin build itself had already cached the cpu wheels.)
+- **Model reuse (Pepe/Hilo standing rule)**: GLiNER loads from copied `knowtwin_api_hf_cache` (no re-download). tei BUILD never fetched Jina v4 — the embeddings Dockerfile bakes no model; the 10.1GB image = pytorch/CUDA base + deps; Jina downloads only at tei's (deferred) first runtime boot, and compose mounts EcoDB's HF cache to reuse it.
+
 ## STATUS detail
 
 - **Files:** DONE — full structural fork written and committed LOCAL ONLY (`3c34293`, no push, per GIT POLICY).
@@ -158,6 +170,7 @@ metacognition include_router in main.py: NONE
 - **D-P1.1-5** *(new — ner model provisioning, mirrors torch story)* `ner/server.py` downloads the GLiNER model (`urchade/gliner_multi-v2.1` + `microsoft/mdeberta-v3-base`) from HF Hub at RUNTIME, unauthenticated + rate-limited → cold boot stalled at 20%, healthcheck (start_period 60s) false-flagged unhealthy → api (depends_on ner:healthy) stuck in Created.
   - **APPLIED NOW (immediate):** copied EcoDB's already-downloaded model from volume `ecodb_api_hf_cache` → `knowtwin_api_hf_cache` (self-contained own volume, no runtime coupling). ner then loaded from cache in ~20s → healthy. Also bumped ner healthcheck `start_period 60s→180s`, `retries 3→5`.
   - **SHIP-CLEAN FIX (do before shipping to Manu):** bake the model into the ner image at build time (`snapshot_download(...)` in `ner/Dockerfile`, like the reranker precache), with `HF_TOKEN` as a build ARG to dodge the unauthenticated rate limit → shipped image is self-contained, zero runtime HF fetch.
+- **D-P1.1-6** *(verificador beta note)* `main.py` /health logs `ecodb.health: embeddings health check failed: ConnectError` ~1/sec while tei is down → log spam that could drown real failures. FIX before P1.3: add backoff/dedup (e.g. log once on state-change, or rate-limit the warning). Not now.
 - **D-P1.1-e** `sql/trigger_age_sync.sql` copied but NOT mounted at P1.1 (needs nodes/triples). Mounted at P1.2.
 - **D-P1.1-f** scripts/setup.* + seed_predicates.py are EcoDB copies — KnowTwin adaptation at P1.2 (seed) / later.
 - **D-P1.1-g** API key prefix still `ecodb_` (auth.py untouched) → P1.5.
