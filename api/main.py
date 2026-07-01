@@ -73,12 +73,12 @@ async def lifespan(app: FastAPI):
     # rompia tests). En development es no-op.
     settings.validate_production_secrets()
     import logging as _startup_logging
-    _ecodb_log = _startup_logging.getLogger("ecodb")
-    _ecodb_log.setLevel(_startup_logging.INFO)
-    if not _ecodb_log.handlers:
+    _kt_log = _startup_logging.getLogger("knowtwin")
+    _kt_log.setLevel(_startup_logging.INFO)
+    if not _kt_log.handlers:
         _h = _startup_logging.StreamHandler()
         _h.setFormatter(_startup_logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        _ecodb_log.addHandler(_h)
+        _kt_log.addHandler(_h)
     # Si DATABASE_URL apunta a un host que aun no existe (tests, builds en CI),
     # arrancar igual y dejar que el pool falle al primer endpoint que lo use.
 
@@ -99,12 +99,12 @@ async def lifespan(app: FastAPI):
         pool = await get_pool()
         count = await load_dictionary_to_cache(pool)
         import logging
-        logging.getLogger("ecodb.startup").info(
+        logging.getLogger("knowtwin.startup").info(
             "entity_dictionary cache loaded at startup: %d entries", count
         )
     except Exception as exc:
         import logging
-        logging.getLogger("ecodb.startup").warning(
+        logging.getLogger("knowtwin.startup").warning(
             "entity_dictionary cache load failed at startup (extract_entities will run without overrides): %r", exc
         )
 
@@ -113,7 +113,7 @@ async def lifespan(app: FastAPI):
     llm = init_llm_provider()
     if llm:
         is_avail = await llm.available()
-        _ecodb_log.info("LLM provider %s: available=%s", settings.ECODB_LLM_PROVIDER, is_avail)
+        _kt_log.info("LLM provider %s: available=%s", settings.ECODB_LLM_PROVIDER, is_avail)
 
     # In-process document ingestion (P1.8): recover stuck + start LISTEN loop
     _ingest_task = None
@@ -122,14 +122,31 @@ async def lifespan(app: FastAPI):
         pool = await get_pool()
         await recover_stuck_documents(pool)
         _ingest_task = asyncio.create_task(start_ingest_listener(pool))
-        _ecodb_log.info("Ingest listener started on channel knowtwin_ingest")
+        _kt_log.info("Ingest listener started on channel knowtwin_ingest")
     except Exception as _ingest_exc:
-        _ecodb_log.warning(
+        _kt_log.warning(
             "Ingest listener startup failed (documents won't auto-process): %r", _ingest_exc
+        )
+
+    # Curator post-session listener (P1.11): triggered by write_rollup pg_notify
+    _curator_post_task = None
+    try:
+        from cell_worker import start_curator_post_listener
+        _curator_post_task = asyncio.create_task(start_curator_post_listener(pool))
+        _kt_log.info("Curator post-session listener started on channel knowtwin_curator_post")
+    except Exception as _cp_exc:
+        _kt_log.warning(
+            "Curator post-session listener startup failed: %r", _cp_exc
         )
 
     yield
 
+    if _curator_post_task is not None:
+        _curator_post_task.cancel()
+        try:
+            await _curator_post_task
+        except (asyncio.CancelledError, Exception):
+            pass
     if _ingest_task is not None:
         _ingest_task.cancel()
         try:
@@ -195,7 +212,7 @@ def create_app(environment: str = None) -> FastAPI:
                     embeddings_status = "degraded"
         except Exception as _e:
             import logging as _logging
-            _logging.getLogger("ecodb.health").warning(
+            _logging.getLogger("knowtwin.health").warning(
                 "embeddings health check failed: %s", type(_e).__name__
             )
             embeddings_status = "degraded"

@@ -8,14 +8,14 @@ import hashlib
 import json
 import logging
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import asyncpg
 import httpx
 log = logging.getLogger("knowtwin.cell")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-API_URL = os.environ.get("ECODB_API_INTERNAL_URL", "http://knowtwin-api:8080")
+API_URL = os.environ.get("KNOWTWIN_API_INTERNAL_URL", os.environ.get("ECODB_API_INTERNAL_URL", "http://knowtwin-api:8080"))
 _INTERNAL_SECRET = os.environ.get("INTERNAL_BROADCAST_SECRET", "")
 
 _CELL_LLM = None
@@ -48,10 +48,6 @@ _SAFE_FMT = _SafeFormatter()
 
 def _safe_format(template: str, **kwargs) -> str:
     return _SAFE_FMT.vformat(template, (), kwargs)
-
-
-def _vec_literal(arr) -> str:
-    return "[" + ",".join(repr(float(x)) for x in arr) + "]"
 
 
 # ---------------------------------------------------------------------------
@@ -334,3 +330,22 @@ _BUILTIN_DISPATCH = {
     ("curator_post", None): _curator_post_handler,
     ("verifier", None): _verifier_handler,
 }
+
+
+async def start_curator_post_listener(pool):
+    """LISTEN on knowtwin_curator_post channel for post-session triggers."""
+    conn = await pool.acquire()
+    try:
+        await conn.add_listener("knowtwin_curator_post", lambda *args: None)
+        import asyncio
+        while True:
+            notif = await conn.connection.notifies.get()
+            session_id = notif.payload
+            log.info("curator_post triggered for session %s", session_id)
+            try:
+                from curator_post import run_curator_post
+                await run_curator_post(pool, session_id)
+            except Exception as exc:
+                log.warning("curator_post failed for session %s: %r", session_id, exc)
+    finally:
+        await pool.release(conn)

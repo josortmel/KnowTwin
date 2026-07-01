@@ -19,7 +19,7 @@ import httpx
 log = logging.getLogger("knowtwin.worker")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-API_URL = os.environ.get("ECODB_API_INTERNAL_URL", "http://knowtwin-api:8080")
+API_URL = os.environ.get("KNOWTWIN_API_INTERNAL_URL", os.environ.get("ECODB_API_INTERNAL_URL", "http://knowtwin-api:8080"))
 MEDIA_STORE_DIR = os.environ.get("MEDIA_STORE_DIR", "/app/media")
 
 _URL_SCHEME_RE = re.compile(r'^(https?|ftp|file|rtsp|rtmp)://', re.IGNORECASE)
@@ -44,9 +44,6 @@ def _extract_frontmatter_tags(text: str) -> list[str]:
 PARSE_TIMEOUT = int(os.environ.get("PARSE_TIMEOUT", "300"))
 GLINER_TIMEOUT = int(os.environ.get("GLINER_TIMEOUT", "60"))
 WHISPER_TIMEOUT = int(os.environ.get("WHISPER_TIMEOUT", "1800"))
-
-class EmbeddingsServiceError(RuntimeError):
-    pass
 
 # Recovery
 RECOVERY_INTERVAL = 300          # 5 min

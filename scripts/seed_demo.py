@@ -152,10 +152,15 @@ async def main():
         print("\n4. Running scripted interview sessions...")
         for session_key, session_data in SESSION_RESPONSES.items():
             sid = await conn.fetchval(
-                "INSERT INTO interview_sessions (project_id, employee_id, topic, status) "
-                "VALUES ($1, $2, $3, 'completed') RETURNING id",
-                proj_id, emp_id, session_data["topic"],
+                "SELECT id FROM interview_sessions WHERE project_id = $1 AND topic = $2",
+                proj_id, session_data["topic"],
             )
+            if sid is None:
+                sid = await conn.fetchval(
+                    "INSERT INTO interview_sessions (project_id, employee_id, topic, status) "
+                    "VALUES ($1, $2, $3, 'completed') RETURNING id",
+                    proj_id, emp_id, session_data["topic"],
+                )
 
             for turn in session_data["turns"]:
                 for cd in turn["canned_extraction"]["claims"]:
@@ -164,7 +169,8 @@ async def main():
                         "object_value, evidence_text, source_type, employee_id, session_id, "
                         "sensitivity, corroboration_level, tags) "
                         "VALUES ($1, $2, $3, $4, $5, $6, 'interview', $7, $8, "
-                        "'restricted', 'single_source', $9::text[])",
+                        "'restricted', 'single_source', $9::text[]) "
+                        "ON CONFLICT DO NOTHING",
                         emp_id, proj_id,
                         cd["subject_entity"], cd["predicate"],
                         cd.get("object_value"), cd["evidence_text"],
