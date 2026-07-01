@@ -240,9 +240,8 @@ def create_app(environment: str = None) -> FastAPI:
     import graph
     app.include_router(graph.router)
 
-    # Search router ( — busqueda semantica basica = Etapa 3 GAMR.
-    import search
-    app.include_router(search.router)
+    # search.py UNWIRED (D-P1.16-2): queries dropped memories table.
+    # Twin query pipeline (twin.py) is the live GAMR path.
 
     # Workspaces router ( — CRUD workspaces con cascada permisos.
     import workspaces
@@ -296,6 +295,10 @@ def create_app(environment: str = None) -> FastAPI:
     # Twin router (P1.16) — twin query pipeline (GAMR → claims).
     import twin
     app.include_router(twin.router)
+
+    # Curator router (P1.9) — batch pre-interview pipeline.
+    import curator
+    app.include_router(curator.router)
 
     # Telemetry router (Fase B.1) — internal-only injection telemetry.
     import telemetry_api
