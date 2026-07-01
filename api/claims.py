@@ -386,6 +386,10 @@ async def update_claim(
             changes["sensitivity"] = f"{current['sensitivity']}→{body.sensitivity}"
         if body.dispute_state is not None:
             changes["dispute_state"] = f"{current['dispute_state']}→{body.dispute_state}"
+        if body.tags is not None:
+            changes["tags"] = "updated"
+        if body.resolution_note is not None:
+            changes["resolution_note"] = "set"
 
         if changes:
             await conn.execute(
@@ -534,5 +538,12 @@ async def promote_claim(claim_id: UUID, body: PromoteRequest, actor: dict = Depe
                 """,
                 new_level, claim_id,
             )
+
+        await conn.execute(
+            """INSERT INTO audit_log (user_id, action, resource, resource_id, details)
+               VALUES ($1, 'promote_claim', 'claim', $2, $3::jsonb)""",
+            int(actor["sub"]), str(claim_id),
+            json.dumps({"old_level": cur_level, "new_level": new_level}),
+        )
 
     return _claim_row_to_response(row)
