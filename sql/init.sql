@@ -956,12 +956,21 @@ CREATE TRIGGER trg_check_team_resource_org
 -- ============================================================================
 -- §22  Triggers — AGE graph sync (knowtwin_graph)
 -- ============================================================================
+-- AGE 1.5.0 does NOT support parameterized Cypher ($1::agtype) from PL/pgSQL.
+-- Names are escaped via cypher_quote() → Cypher-safe single-quoted literals.
+
+CREATE OR REPLACE FUNCTION cypher_quote(val text) RETURNS text AS $fn$
+    SELECT chr(39)
+        || replace(replace(val, chr(92), chr(92)||chr(92)), chr(39), chr(92)||chr(39))
+        || chr(39)
+$fn$ LANGUAGE sql IMMUTABLE STRICT;
+
 CREATE OR REPLACE FUNCTION age_sync_insert() RETURNS trigger AS
 $body$
 BEGIN
     EXECUTE format(
-        'SELECT * FROM cypher(''knowtwin_graph'', $cypher$CREATE (n:Entity {name: %L, sql_id: %s}) RETURN id(n)$cypher$) AS (node_id agtype)',
-        NEW.name, NEW.id
+        'SELECT * FROM cypher(''knowtwin_graph'', $$CREATE (n:Entity {name: %s, sql_id: %s}) RETURN id(n)$$) AS (node_id agtype)',
+        cypher_quote(NEW.name), NEW.id
     );
     RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
@@ -983,7 +992,7 @@ BEGIN
     END IF;
     IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND NEW.status != 'active' AND (OLD.status = 'active' OR OLD.status IS NULL)) THEN
         EXECUTE format(
-            'SELECT * FROM cypher(''knowtwin_graph'', $cypher$MATCH (n:Entity {sql_id: %s}) DETACH DELETE n$cypher$) AS (d agtype)',
+            'SELECT * FROM cypher(''knowtwin_graph'', $$MATCH (n:Entity {sql_id: %s}) DETACH DELETE n$$) AS (d agtype)',
             target_id
         );
     END IF;
@@ -1006,8 +1015,8 @@ $body$
 BEGIN
     IF NEW.name != OLD.name THEN
         EXECUTE format(
-            'SELECT * FROM cypher(''knowtwin_graph'', $cypher$MATCH (n:Entity {sql_id: %s}) SET n.name = %L RETURN id(n)$cypher$) AS (node_id agtype)',
-            NEW.id, NEW.name
+            'SELECT * FROM cypher(''knowtwin_graph'', $$MATCH (n:Entity {sql_id: %s}) SET n.name = %s RETURN id(n)$$) AS (node_id agtype)',
+            NEW.id, cypher_quote(NEW.name)
         );
     END IF;
     RETURN NEW;
@@ -1023,8 +1032,8 @@ $body$
 BEGIN
     IF NEW.status = 'active' AND (OLD.status != 'active' OR OLD.status IS NULL) THEN
         EXECUTE format(
-            'SELECT * FROM cypher(''knowtwin_graph'', $cypher$CREATE (n:Entity {name: %L, sql_id: %s}) RETURN id(n)$cypher$) AS (node_id agtype)',
-            NEW.name, NEW.id
+            'SELECT * FROM cypher(''knowtwin_graph'', $$CREATE (n:Entity {name: %s, sql_id: %s}) RETURN id(n)$$) AS (node_id agtype)',
+            cypher_quote(NEW.name), NEW.id
         );
     END IF;
     RETURN NEW;
