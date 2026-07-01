@@ -1,6 +1,7 @@
 FROM python:3.12-slim
-RUN pip install --no-cache-dir fastapi==0.118.0 uvicorn[standard]==0.40.0 gliner==0.2.26
 WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY server.py .
 RUN groupadd --gid 1001 nergroup \
     && useradd --system --uid 1000 --gid 1001 --no-create-home --shell /usr/sbin/nologin neruser
