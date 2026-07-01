@@ -3,8 +3,8 @@
 # Six-service architecture (Spec §1.2): db · tei · ner · api · frontend · cell.
 #
 # Host ports are OFFSET to coexist with a running EcoDB (which holds
-# 5435/8080/8091/8092):  db 5436 · api 8090 · ner 8093 · tei internal-only ·
-# frontend 3001. Container-internal ports stay native.
+# 5435/8080/8091/8092):  db 5436 · api 8090 · ner internal-only ·
+# tei internal-only · frontend 3001. Container-internal ports stay native.
 #
 # Profiles:
 #   (default)  db, tei, ner, api, frontend

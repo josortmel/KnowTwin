@@ -2,12 +2,12 @@
 
 Variables:
 - ENVIRONMENT          : "development" or "production" (default development).
-- DATABASE_URL         : async postgres DSN (default localhost:5435 ecodb test).
+- DATABASE_URL         : async postgres DSN (default localhost:5436 knowtwin).
 - JWT_SECRET           : HMAC secret for signing JWTs (default DEV ONLY).
 - JWT_TTL_SECONDS      : JWT lifetime, default 3600 (1 hour).
 - API_KEY_PEPPER       : pepper for hashing API keys (default DEV ONLY).
-- CORS_ORIGINS         : comma-separated, default http://localhost:8080,http://localhost:8091.
-- API_VERSION          : external version string, default 0.9.0.
+- CORS_ORIGINS         : comma-separated, default http://localhost:8090,http://localhost:3001.
+- API_VERSION          : external version string, default 0.1.0.
 
 NEVER use the JWT_SECRET / API_KEY_PEPPER defaults in production.
 The Docker image will FAIL to start if ENVIRONMENT=production and secrets
@@ -20,7 +20,7 @@ IS_PRODUCTION = ENVIRONMENT == "production"
 IS_DEVELOPMENT = ENVIRONMENT == "development"
 
 API_VERSION = os.environ.get("API_VERSION", "0.1.0")
-SCHEMA_VERSION = "0.1.0"  # KnowTwin baseline (real schema lands in P1.2)
+SCHEMA_VERSION = "0.2.0"
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -45,14 +45,14 @@ _KNOWN_DEV_DEFAULTS = frozenset({
 API_KEY_PREFIX = "ecodb_"  # prefijo visible para identificar API keys de ecodb
 
 # CORS — restrictive policy, no wildcard, no credentials.
-_default_origins = "http://localhost:8080,http://localhost:8091"
+_default_origins = "http://localhost:8090,http://localhost:3001"
 CORS_ORIGINS = [
     o.strip() for o in os.environ.get("CORS_ORIGINS", _default_origins).split(",") if o.strip()
 ]
 
 # Embeddings service — Jina v4 INT8 running in a separate container.
 # Default: localhost:8090 for tests; in docker-compose it will be
-# http://embeddings:8090 inside the ecodb-net network.
+# http://knowtwin-tei:8090 inside the knowtwin-net network.
 #
 # EMBEDDINGS_TIMEOUT is per httpx phase (connect, read), NOT total — worst
 # case is ~2x this value. For an internal GPU-warm service, 30s per phase is conservative.
