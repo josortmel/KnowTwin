@@ -24,7 +24,7 @@ Pendiente (deuda anotada):
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Query, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -303,6 +303,15 @@ def create_app(environment: str = None) -> FastAPI:
     # Verifier router (P1.10) — batch QA of curator output.
     import verifier
     app.include_router(verifier.router)
+
+    # Interview router (P1.14) — session CRUD + /respond.
+    import interviews
+    app.include_router(interviews.router)
+
+    @app.websocket("/ws/{session_id}")
+    async def websocket_interview(websocket: WebSocket, session_id: str,
+                                   key: str = Query("")):
+        await interviews.ws_interview(websocket, session_id, key)
 
     # Telemetry router (Fase B.1) — internal-only injection telemetry.
     import telemetry_api
