@@ -96,8 +96,10 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health')"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      # Cold GLiNER load headroom. Model is provisioned via api_hf_cache volume
+      # (no runtime HF download). SHIP-CLEAN fix = bake model into image (D-P1.1-5).
+      start_period: 180s
     restart: unless-stopped
     networks:
       - knowtwin-net
