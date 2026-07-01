@@ -300,6 +300,10 @@ def create_app(environment: str = None) -> FastAPI:
     import curator
     app.include_router(curator.router)
 
+    # Verifier router (P1.10) — batch QA of curator output.
+    import verifier
+    app.include_router(verifier.router)
+
     # Telemetry router (Fase B.1) — internal-only injection telemetry.
     import telemetry_api
     app.include_router(telemetry_api.router)

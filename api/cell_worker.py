@@ -319,6 +319,12 @@ def _curator_pre_handler(pool, aid, cfg, ps, pe):
     return run_curator_pre(pool, cfg.get("project_id", 1), aid)
 
 
+def _verifier_handler(pool, aid, cfg, ps, pe):
+    from verifier import run_verifier
+    return run_verifier(pool, cfg.get("project_id", 1), aid)
+
+
 _BUILTIN_DISPATCH = {
     ("curator_pre", None): _curator_pre_handler,
+    ("verifier", None): _verifier_handler,
 }
