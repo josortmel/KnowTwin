@@ -285,6 +285,10 @@ def create_app(environment: str = None) -> FastAPI:
     import documents
     app.include_router(documents.router)
 
+    # Org settings router (P1.4.5) — per-project sanitization + retention.
+    import org_settings
+    app.include_router(org_settings.router)
+
     # Telemetry router (Fase B.1) — internal-only injection telemetry.
     import telemetry_api
     app.include_router(telemetry_api.router)

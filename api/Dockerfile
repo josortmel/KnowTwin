@@ -40,7 +40,7 @@ COPY --chown=apiuser:apiuser \
     api/classifier.py \
     api/crypto.py api/db.py api/documents.py api/embeddings_client.py api/entity_normalization.py \
     api/events.py api/gliner_service.py api/graph.py api/llm_provider.py api/main.py \
-    api/memories.py api/onboarding.py api/pagination.py api/parsers.py \
+    api/memories.py api/onboarding.py api/org_settings.py api/pagination.py api/parsers.py \
     api/permissions.py api/projects.py api/providers.py api/rate_limit.py api/reranker.py \
     api/search.py api/settings.py api/shared_models.py api/stats.py api/teams.py \
     api/telemetry.py api/telemetry_api.py api/users.py api/worker.py api/workspaces.py \

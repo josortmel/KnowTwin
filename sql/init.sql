@@ -737,6 +737,11 @@ CREATE TABLE entity_expected_claims (
   UNIQUE (project_id, entity_name)
 );
 
+CREATE TABLE org_settings (
+  project_id  INT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  config      JSONB NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE verifier_reports (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id      INT NOT NULL REFERENCES projects(id),

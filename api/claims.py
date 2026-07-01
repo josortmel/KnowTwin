@@ -205,6 +205,17 @@ async def create_claim(body: ClaimCreate, actor: dict = Depends(get_current_user
                 raise HTTPException(422, f"agent '{body.agent_identifier}' not found")
             agent_id = agent_row["id"]
 
+        sensitivity = body.sensitivity
+        if sensitivity == "restricted":
+            from org_settings import get_sanitization_default
+            node_row = await conn.fetchrow(
+                "SELECT type FROM nodes WHERE name = $1", body.subject_entity
+            )
+            if node_row and node_row["type"]:
+                default_sens = await get_sanitization_default(conn, body.project_id, node_row["type"])
+                if default_sens:
+                    sensitivity = default_sens
+
         row = await conn.fetchrow(
             """
             INSERT INTO claims
@@ -217,7 +228,7 @@ async def create_claim(body: ClaimCreate, actor: dict = Depends(get_current_user
             int(actor["sub"]), agent_id, body.project_id,
             body.subject_entity, body.predicate, body.object_entity, body.object_value,
             body.evidence_text, body.source_type,
-            body.tags, body.sensitivity, body.criticality,
+            body.tags, sensitivity, body.criticality,
         )
 
     return _claim_row_to_response(row)
