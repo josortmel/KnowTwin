@@ -139,7 +139,7 @@ async def main():
                         "INSERT INTO claims (user_id, project_id, subject_entity, predicate, "
                         "object_value, evidence_text, source_type, trust_tier, sensitivity, "
                         "corroboration_level, source_id) "
-                        "VALUES ($1, $2, $3, $4, $5, $6, 'document', $7, 'public', "
+                        "VALUES ($1, $2, $3, $4, $5, $6, 'seed_demo', $7, 'public', "
                         "'single_source', $8) ON CONFLICT DO NOTHING",
                         admin_id, proj_id,
                         cd["subject_entity"], cd["predicate"],
@@ -163,7 +163,7 @@ async def main():
                         "INSERT INTO claims (user_id, project_id, subject_entity, predicate, "
                         "object_value, evidence_text, source_type, employee_id, session_id, "
                         "sensitivity, corroboration_level) "
-                        "VALUES ($1, $2, $3, $4, $5, $6, 'interview', $7, $8, "
+                        "VALUES ($1, $2, $3, $4, $5, $6, 'seed_demo', $7, $8, "
                         "'restricted', 'single_source')",
                         emp_id, proj_id,
                         cd["subject_entity"], cd["predicate"],
@@ -206,7 +206,7 @@ async def main():
         print(f"   Contradictions: {resolved} resolved_in_favor, {disputed} disputed")
 
         tacit = await conn.fetchval(
-            "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'interview'",
+            "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo' AND session_id IS NOT NULL",
             proj_id,
         )
         print(f"   Tacit claims from interviews: {tacit}")

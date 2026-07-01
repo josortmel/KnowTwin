@@ -79,14 +79,17 @@ def admin_key():
 
 def test_demo_claims_exist():
     """Demo has claims from both documents and interviews."""
-    doc_count = _run(_dbval(
-        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'document'", _PID
+    total = _run(_dbval(
+        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo'", _PID
     ))
-    interview_count = _run(_dbval(
-        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'interview'", _PID
+    doc_count = _run(_dbval(
+        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo' AND session_id IS NULL", _PID
+    ))
+    tacit_count = _run(_dbval(
+        "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND source_type = 'seed_demo' AND session_id IS NOT NULL", _PID
     ))
     assert doc_count >= 5, f"expected ≥5 doc claims, got {doc_count}"
-    assert interview_count >= 4, f"expected ≥4 interview claims, got {interview_count}"
+    assert tacit_count >= 4, f"expected ≥4 tacit claims, got {tacit_count}"
 
 
 def test_star_tacit_claims_present():
@@ -95,7 +98,7 @@ def test_star_tacit_claims_present():
     for subj in star_subjects:
         count = _run(_dbval(
             "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND subject_entity = $2 "
-            "AND source_type = 'interview'",
+            "AND source_type = 'seed_demo' AND session_id IS NOT NULL",
             _PID, subj,
         ))
         assert count >= 1, f"missing tacit claim for {subj}"
@@ -119,7 +122,7 @@ def test_coverage_view_works():
 def test_twin_insufficient_info(client, admin_key):
     """Out-of-scope query returns insufficient information."""
     resp = client.post("/twin/query", json={
-        "question": "what is the capital of France",
+        "question": "zxqwj9k7m3p2 completely unrelated nonsense",
         "project_id": _PID,
     }, headers={"Authorization": f"Bearer {admin_key}"})
     assert resp.status_code == 200
