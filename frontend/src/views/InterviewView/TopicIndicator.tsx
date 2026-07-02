@@ -1,4 +1,5 @@
 import { SafeText } from "../../components/SafeText";
+import { Dot } from "../../components/Dot";
 
 interface TopicIndicatorProps {
   topic: string | null;
@@ -8,11 +9,12 @@ interface TopicIndicatorProps {
 export function TopicIndicator({ topic, converged }: TopicIndicatorProps) {
   if (!topic) return null;
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded">
-      <span className="text-sm text-gray-500">Current topic:</span>
-      <SafeText text={topic} className="font-medium text-blue-800" />
+    <div className="flex items-center gap-2">
+      <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-3">Topic</span>
+      <SafeText text={topic} className="font-body text-[13px] font-medium text-ink-1" />
       {converged && (
-        <span className="inline-block px-2 py-0.5 bg-green-200 text-green-800 rounded text-xs font-medium">
+        <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-ink-2">
+          <Dot s="ok" size={5} />
           converged
         </span>
       )}

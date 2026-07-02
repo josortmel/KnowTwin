@@ -1,26 +1,19 @@
-import { getApiKey } from "./auth";
+import type { KnowtwinWsEvent, KnowtwinWsHandle } from "../types/electron";
 
 export type WsEventType = "new_claim" | "coverage_update" | "topic_change" | "contradiction";
 
 export interface WsEvent {
-  type: WsEventType;
+  type: WsEventType | string;
   data: Record<string, unknown>;
 }
 
 export type WsHandler = (event: WsEvent) => void;
 
-export function connectWs(sessionId: string, onEvent: WsHandler): WebSocket {
-  const key = getApiKey() ?? "";
-  const ws = new WebSocket(`ws://localhost:8090/ws/${sessionId}?key=${encodeURIComponent(key)}`);
-
-  ws.onmessage = (msg) => {
-    try {
-      const parsed: WsEvent = JSON.parse(msg.data);
-      onEvent(parsed);
-    } catch {
-      // malformed message ignored
-    }
-  };
-
-  return ws;
+// The WebSocket is owned by the main process (window.knowtwin.wsConnect): main
+// attaches the ?key from the encrypted store, so the key never reaches the
+// renderer (DESIGN.md §4). Returns a { send, close } handle.
+export function connectWs(projectId: number, sessionId: string, onEvent: WsHandler): KnowtwinWsHandle {
+  const b = window.knowtwin;
+  if (!b) return { send: () => {}, close: () => {} };
+  return b.wsConnect({ projectId, sessionId }, (ev: KnowtwinWsEvent) => onEvent(ev));
 }

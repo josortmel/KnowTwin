@@ -2,14 +2,11 @@ interface LoadingProps {
   message?: string;
 }
 
-export function Loading({ message = "Loading..." }: LoadingProps) {
+export function Loading({ message = "Loading…" }: LoadingProps) {
   return (
-    <div className="flex items-center justify-center p-8 text-gray-500">
-      <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-      </svg>
-      {message}
+    <div className="flex items-center justify-center gap-2 p-8">
+      <span className="h-4 w-4 flex-none animate-spin rounded-full border-2 border-ink-3 border-t-transparent motion-reduce:animate-none" />
+      <span className="font-mono text-[12px] text-ink-2">{message}</span>
     </div>
   );
 }

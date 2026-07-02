@@ -1,3 +1,134 @@
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================================
+   Base layer — the backdrop (DESIGN.md §1 principle 1, §2.4).
+   The non-flat backdrop is what the liquid glass refracts; it must
+   stay textured (warm/cool radial blobs + soft-light grain).
+   ============================================================ */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  html {
+    background: var(--bd-2);
+  }
+
+  body {
+    min-height: 100vh;
+    font-family: var(--font-body);
+    color: var(--ink-1);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    background:
+      radial-gradient(60% 50% at 78% 8%, var(--blob-warm), transparent 60%),
+      radial-gradient(55% 45% at 12% 92%, var(--blob-cool), transparent 60%),
+      radial-gradient(120% 100% at 50% 0%, var(--bd-1), var(--bd-2) 55%, var(--bd-3));
+    transition:
+      background 0.6s ease,
+      color 0.6s ease;
+  }
+
+  /* fractalNoise grain, soft-light blended — §2.4 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: var(--grain);
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* tabular numerals on every number — DESIGN.md §2.2 */
+  .mono,
+  [class*='font-mono'] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scroll);
+    border-radius: 7px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* query highlight — DESIGN.md §3 */
+  mark {
+    background: rgba(245, 99, 30, 0.2);
+    color: var(--accent);
+    border-radius: 3px;
+    padding: 0 2px;
+  }
+  [data-theme='dark'] mark {
+    background: rgba(245, 99, 30, 0.26);
+  }
+}
+
+/* ============================================================
+   Liquid Glass card — DESIGN.md §2.5.
+   ::before = static diagonal rim (always on, the glass edge).
+   ::after  = cursor-tracked specular (radial at --mx/--my),
+              hover-gated: opacity 0 at rest → fades in on hover.
+   The GlassCard component updates --mx/--my on pointermove.
+   ============================================================ */
+@layer components {
+  .glass-card {
+    backdrop-filter: blur(28px) saturate(1.6);
+    -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  }
+  /* Static diagonal rim — always on (part of the glass edge, not the flashlight). */
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(150deg, var(--card-edge) 0%, transparent 14%, transparent 86%, var(--card-edge-lo) 100%);
+    opacity: 0.5;
+  }
+  /* Cursor-tracked specular — gated on hover (opacity 0 at rest) and halved in
+     intensity (was always-on at 0.5, now fades to 0.25 only while hovered). */
+  .glass-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(30% 34% at var(--mx) var(--my), var(--card-spec), transparent 60%);
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+  }
+  .glass-card:hover::after {
+    opacity: 0.25;
+  }
+  /* AT3 — the JS --mx/--my tracking already honors reduced-motion; gate the
+     fade too so nothing animates for users who opted out. */
+  @media (prefers-reduced-motion: reduce) {
+    .glass-card::after {
+      transition: none;
+    }
+  }
+  .glass-card > * {
+    position: relative;
+    z-index: 2;
+  }
+}

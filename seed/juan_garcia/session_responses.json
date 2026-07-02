@@ -5,13 +5,20 @@
       {
         "text": "Elena Ros actually makes all the decisions for Banco Norte, not Carlos. Carlos is the account manager on paper, but Elena handles all the real approvals and negotiations.",
         "canned_extraction": {"claims": [
-          {"subject_entity": "Banco Norte", "predicate": "decide_en", "object_value": "Elena Ros", "evidence_text": "Elena Ros actually makes all the decisions for Banco Norte, not Carlos"}
+          {"subject_entity": "Elena Ros", "predicate": "decide_en", "object_entity": "Banco Norte", "evidence_text": "Elena Ros actually makes all the decisions for Banco Norte, not Carlos"}
         ]}
       },
       {
-        "text": "The ETL pipeline really can only handle about 50K transactions per day reliably. The wiki says 100K but that is the theoretical maximum — in practice it starts failing around 80K and we have had incidents at 95K.",
+        "text": "The ETL pipeline really can only handle about 50K transactions per day reliably. The wiki says 100K but that is the theoretical maximum — in practice it starts failing around 80K.",
         "canned_extraction": {"claims": [
           {"subject_entity": "ETL Pipeline", "predicate": "capacidad", "object_value": "50000 transactions/day", "evidence_text": "The ETL pipeline really can only handle about 50K transactions per day reliably"}
+        ]}
+      },
+      {
+        "text": "I'm the one who actually set up the Data Reconciliation process from scratch. Nobody else understands it — not even Maria. If I leave, that process dies with me.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Juan Garcia", "predicate": "unico_conocedor_de", "object_entity": "Data Reconciliation", "evidence_text": "I'm the one who set up the Data Reconciliation process from scratch. Nobody else understands it"},
+          {"subject_entity": "Juan Garcia", "predicate": "gestiona", "object_entity": "Data Reconciliation", "evidence_text": "Juan Garcia gestiona personalmente el proceso de reconciliación de datos mensual"}
         ]}
       }
     ]
@@ -20,15 +27,24 @@
     "topic": "CloudBase and infrastructure",
     "turns": [
       {
-        "text": "I personally negotiated a verbal agreement with CloudBase for 2-hour response on P1 incidents. The contract says 4 hours but they always respond faster because I built a good relationship with their support lead.",
+        "text": "I personally negotiated a verbal agreement with CloudBase for 2-hour response on P1 incidents. The contract says 4 hours but they always respond faster because I built a relationship with Sergio Blanco.",
         "canned_extraction": {"claims": [
-          {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "2 hours verbal", "evidence_text": "I personally negotiated a verbal agreement with CloudBase for 2-hour response on P1 incidents"}
+          {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "2 hours verbal", "evidence_text": "I personally negotiated a verbal agreement with CloudBase for 2-hour response on P1 incidents"},
+          {"subject_entity": "Juan Garcia", "predicate": "acuerdo_informal", "object_entity": "Sergio Blanco", "evidence_text": "Juan Garcia tiene un acuerdo informal con Sergio Blanco de CloudBase para respuesta rápida"}
         ]}
       },
       {
-        "text": "Andres Martin is the one who really runs the ETL pipeline day-to-day. Maria Lopez is the architect on paper but Andres is the one who knows every edge case, every workaround, every undocumented behavior.",
+        "text": "Andres Martin is the one who really runs the ETL pipeline day-to-day. Maria Lopez is the architect on paper but Andres knows every edge case, every workaround.",
         "canned_extraction": {"claims": [
-          {"subject_entity": "ETL Pipeline", "predicate": "domina", "object_value": "Andres Martin", "evidence_text": "Andres Martin is the one who really runs the ETL pipeline day-to-day"}
+          {"subject_entity": "Andres Martin", "predicate": "domina", "object_entity": "ETL Pipeline", "evidence_text": "Andres Martin is the one who really runs the ETL pipeline day-to-day"},
+          {"subject_entity": "Andres Martin", "predicate": "sustituye_a", "object_entity": "Maria Lopez", "evidence_text": "Andres Martin sustituye de facto a Maria Lopez en la operación diaria del ETL"}
+        ]}
+      },
+      {
+        "text": "The Monitoring Stack misses about 30% of ETL failures. Pedro knows this and has a cron job on his personal machine that catches the rest. If Pedro is sick, we miss alerts.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Pedro Sanchez", "predicate": "workaround_conocido", "object_entity": "Monitoring Stack", "evidence_text": "Pedro Sanchez has a personal cron job that catches 30% of ETL failures the Monitoring Stack misses"},
+          {"subject_entity": "Monitoring Stack", "predicate": "riesgo_activo", "object_entity": "ETL Pipeline", "evidence_text": "The Monitoring Stack misses about 30% of ETL failures, creating operational risk"}
         ]}
       }
     ]
@@ -37,9 +53,29 @@
     "topic": "Informal agreements and operational knowledge",
     "turns": [
       {
-        "text": "Never escalate production incidents on Friday afternoons. This is an informal agreement we made after the February 2024 incident where a Friday escalation cascaded into a weekend-long firefight. Just handle it quietly or wait until Monday unless it is truly catastrophic.",
+        "text": "Never escalate production incidents on Friday afternoons. This is an informal agreement after February 2024. Just handle it quietly or wait until Monday unless truly catastrophic.",
         "canned_extraction": {"claims": [
-          {"subject_entity": "Nova Consulting", "predicate": "acuerdo_informal", "object_value": "no Friday afternoon escalations", "evidence_text": "Never escalate production incidents on Friday afternoons, informal agreement after February 2024 incident"}
+          {"subject_entity": "Juan Garcia", "predicate": "procedimiento_no_documentado", "object_entity": "Incident Response", "evidence_text": "Never escalate production incidents on Friday afternoons, informal agreement after February 2024 incident"}
+        ]}
+      },
+      {
+        "text": "Ana Torres says the API Gateway handles 10K requests per second but I've seen it buckle at 6K during peak. She designed it for ideal conditions, not real load.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "API Gateway", "predicate": "capacidad", "object_value": "6000 req/s real", "evidence_text": "The API Gateway buckles at 6K requests per second during peak, despite 10K design capacity"}
+        ]}
+      },
+      {
+        "text": "The Dashboard Financiero has a bug where it shows yesterday's data as today's between midnight and 2 AM. Only Andres and I know about it. We just tell Banco Norte not to check reports before 3 AM.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Juan Garcia", "predicate": "conoce_workaround", "object_entity": "Dashboard Financiero", "evidence_text": "Dashboard Financiero shows stale data between midnight and 2 AM, only Juan and Andres know"},
+          {"subject_entity": "Andres Martin", "predicate": "conoce_workaround", "object_entity": "Dashboard Financiero", "evidence_text": "Andres Martin knows about the Dashboard midnight data staleness bug"}
+        ]}
+      },
+      {
+        "text": "Luis says the Cloud Migration is 80% done but that's generous. The Data Warehouse migration alone is stuck because we can't replicate the custom ETL transforms in the new environment.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Cloud Migration", "predicate": "depende_de", "object_entity": "ETL Pipeline", "evidence_text": "Cloud Migration is stuck because custom ETL transforms can't be replicated in the new environment"},
+          {"subject_entity": "Data Warehouse", "predicate": "depende_de", "object_entity": "Cloud Migration", "evidence_text": "Data Warehouse migration blocked by Cloud Migration progress"}
         ]}
       }
     ]

@@ -461,7 +461,8 @@ async def batch_claims(body: BatchRequest, actor: dict = Depends(get_current_use
             try:
                 row = await conn.fetchrow(
                     "SELECT id, project_id, corroboration_level, source_type, "
-                    "embedding, sensitivity FROM claims WHERE id = $1", cid,
+                    "embedding, sensitivity, subject_entity, predicate, "
+                    "object_value, object_entity FROM claims WHERE id = $1", cid,
                 )
                 if row is None:
                     failed.append({"id": str(cid), "error": "not_found"})
@@ -511,6 +512,29 @@ async def batch_claims(body: BatchRequest, actor: dict = Depends(get_current_use
                                 "UPDATE claims SET corroboration_level = $1, updated_at = now() WHERE id = $2",
                                 next_level, cid,
                             )
+                        # Materialize graph triple + entity links (SQL + AGE dual-write)
+                        from graph import _ensure_node, _create_age_edge
+                        subj_nid = await _ensure_node(conn, row["subject_entity"])
+                        await conn.execute(
+                            "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                            "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                            cid, subj_nid,
+                        )
+                        obj_name = row.get("object_entity") or row.get("object_value")
+                        if obj_name:
+                            obj_nid = await _ensure_node(conn, obj_name)
+                            await conn.execute(
+                                "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                                "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                                cid, obj_nid,
+                            )
+                            t_row = await conn.fetchrow(
+                                "INSERT INTO triples (subject_id, predicate, object_id, claim_id) "
+                                "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+                                subj_nid, row["predicate"], obj_nid, cid,
+                            )
+                            if t_row is not None:
+                                await _create_age_edge(conn, subj_nid, row["predicate"], obj_nid)
                         await conn.execute(
                             "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
                             "VALUES ($1, 'batch_approve', 'claim', $2, $3::jsonb)",
@@ -797,6 +821,31 @@ async def promote_claim(claim_id: UUID, body: PromoteRequest, actor: dict = Depe
                 """,
                 new_level, claim_id,
             )
+
+        # Materialize claim as graph triple (SQL + AGE dual-write) + entity links
+        if new_level != "rejected":
+            from graph import _ensure_node, _create_age_edge
+            subject_node_id = await _ensure_node(conn, row["subject_entity"])
+            await conn.execute(
+                "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                claim_id, subject_node_id,
+            )
+            object_name = row.get("object_entity") or row.get("object_value")
+            if object_name:
+                object_node_id = await _ensure_node(conn, object_name)
+                await conn.execute(
+                    "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                    "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    claim_id, object_node_id,
+                )
+                triple_row = await conn.fetchrow(
+                    "INSERT INTO triples (subject_id, predicate, object_id, claim_id) "
+                    "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+                    subject_node_id, row["predicate"], object_node_id, claim_id,
+                )
+                if triple_row is not None:
+                    await _create_age_edge(conn, subject_node_id, row["predicate"], object_node_id)
 
         audit_action = "curator_override" if body.force else "promote_claim"
         await conn.execute(

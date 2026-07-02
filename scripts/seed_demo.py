@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -116,6 +117,17 @@ async def main():
 
         # 3. Insert documents + claims from canned extractions (simulates curator_pre)
         print("\n3. Seeding documents + canned claims...")
+        _DOC_SOURCE_DATES = {
+            "organigrama_equipo": datetime(2024, 3, 15, tzinfo=timezone.utc),
+            "contrato_cloudbase": datetime(2026, 4, 1, tzinfo=timezone.utc),
+            "wiki_etl": datetime(2025, 6, 15, tzinfo=timezone.utc),
+            "plan_banco_norte": datetime(2025, 9, 1, tzinfo=timezone.utc),
+            "adr_postgresql": datetime(2025, 4, 10, tzinfo=timezone.utc),
+            "correo_renovacion": datetime(2026, 5, 20, tzinfo=timezone.utc),
+            "informe_p1": datetime(2026, 2, 1, tzinfo=timezone.utc),
+            "plan_retailco": datetime(2025, 12, 1, tzinfo=timezone.utc),
+        }
+        doc_claim_count = 0
         for doc_file, trust_hint in _DOC_TRUST_HINTS.items():
             doc_key = doc_file.replace(".md", "")
             doc_path = str(DOCS_DIR / doc_file)
@@ -132,21 +144,24 @@ async def main():
 
             from curator import trust_tier_from_hint
             tier = trust_tier_from_hint(trust_hint)
+            source_date = _DOC_SOURCE_DATES.get(doc_key)
 
             if doc_key in CANNED_EXTRACTIONS:
                 for cd in CANNED_EXTRACTIONS[doc_key]["claims"]:
                     await conn.execute(
                         "INSERT INTO claims (user_id, project_id, subject_entity, predicate, "
-                        "object_value, evidence_text, source_type, trust_tier, sensitivity, "
-                        "corroboration_level, source_id, tags) "
-                        "VALUES ($1, $2, $3, $4, $5, $6, 'document', $7, 'public', "
-                        "'single_source', $8, $9::text[]) ON CONFLICT DO NOTHING",
+                        "object_entity, object_value, evidence_text, source_type, trust_tier, "
+                        "sensitivity, corroboration_level, source_id, source_date, tags) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, $7, 'document', $8, 'public', "
+                        "'single_source', $9, $10, $11::text[]) ON CONFLICT DO NOTHING",
                         admin_id, proj_id,
                         cd["subject_entity"], cd["predicate"],
-                        cd.get("object_value"), cd["evidence_text"],
-                        tier, str(doc_id), ["demo_seed"],
+                        cd.get("object_entity"), cd.get("object_value"),
+                        cd["evidence_text"],
+                        tier, str(doc_id), source_date, ["demo_seed"],
                     )
-        print(f"   8 documents + claims seeded")
+                    doc_claim_count += 1
+        print(f"   8 documents + {doc_claim_count} claims seeded")
 
         # 4. Run scripted interview sessions
         print("\n4. Running scripted interview sessions...")
@@ -166,14 +181,15 @@ async def main():
                 for cd in turn["canned_extraction"]["claims"]:
                     await conn.execute(
                         "INSERT INTO claims (user_id, project_id, subject_entity, predicate, "
-                        "object_value, evidence_text, source_type, employee_id, session_id, "
-                        "sensitivity, corroboration_level, tags) "
-                        "VALUES ($1, $2, $3, $4, $5, $6, 'interview', $7, $8, "
-                        "'restricted', 'single_source', $9::text[]) "
+                        "object_entity, object_value, evidence_text, source_type, employee_id, "
+                        "session_id, sensitivity, corroboration_level, tags) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, $7, 'interview', $8, $9, "
+                        "'restricted', 'single_source', $10::text[]) "
                         "ON CONFLICT DO NOTHING",
                         emp_id, proj_id,
                         cd["subject_entity"], cd["predicate"],
-                        cd.get("object_value"), cd["evidence_text"],
+                        cd.get("object_entity"), cd.get("object_value"),
+                        cd["evidence_text"],
                         emp_id, sid, ["demo_seed"],
                     )
             print(f"   {session_key}: {len(session_data['turns'])} turns")
@@ -229,6 +245,66 @@ async def main():
             "SELECT COUNT(*) FROM claims WHERE project_id = $1", proj_id
         )
         print(f"   Total claims: {total_claims}")
+
+        # 7. Materialize graph triples + claim_entity_links (SQL + AGE dual-write)
+        print("\n7. Materializing graph triples + entity links...")
+        from graph import _ensure_node, _create_age_edge
+        all_claims = await conn.fetch(
+            "SELECT id, subject_entity, predicate, object_value, object_entity "
+            "FROM claims WHERE project_id = $1 AND corroboration_level != 'rejected'",
+            proj_id,
+        )
+        triple_count = 0
+        link_count = 0
+        for c in all_claims:
+            subj_id = await _ensure_node(conn, c["subject_entity"])
+            await conn.execute(
+                "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                c["id"], subj_id,
+            )
+            link_count += 1
+            obj_name = c["object_entity"] or c["object_value"]
+            if obj_name:
+                obj_id = await _ensure_node(conn, obj_name)
+                await conn.execute(
+                    "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                    "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    c["id"], obj_id,
+                )
+                link_count += 1
+                t_row = await conn.fetchrow(
+                    "INSERT INTO triples (subject_id, predicate, object_id, claim_id) "
+                    "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+                    subj_id, c["predicate"], obj_id, c["id"],
+                )
+                if t_row is not None:
+                    await _create_age_edge(conn, subj_id, c["predicate"], obj_id)
+                triple_count += 1
+        print(f"   {triple_count} triples, {link_count} entity links materialized")
+
+        # 8. Embed all claims for Twin semantic search
+        print("\n8. Embedding claims for Twin search...")
+        from embeddings_client import embed_text
+        unembedded = await conn.fetch(
+            "SELECT id, evidence_text FROM claims "
+            "WHERE project_id = $1 AND embedding IS NULL "
+            "AND corroboration_level IN ('single_source','corroborated','corroborated_by_employee','validated')",
+            proj_id,
+        )
+        embedded_count = 0
+        for ue in unembedded:
+            try:
+                vec = await embed_text(ue["evidence_text"], prompt_name="passage")
+                if vec:
+                    await conn.execute(
+                        "UPDATE claims SET embedding = $1::vector, embedding_model = 'jina-v4' WHERE id = $2",
+                        str(vec), ue["id"],
+                    )
+                    embedded_count += 1
+            except Exception as e:
+                print(f"   WARN: embed failed for {ue['id']}: {e}")
+        print(f"   {embedded_count}/{len(unembedded)} claims embedded")
 
         print("\n=== DEMO SEED COMPLETE ===")
 

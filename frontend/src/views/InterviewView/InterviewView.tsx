@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { get } from "../../lib/api";
 import { connectWs, type WsEvent } from "../../lib/ws";
 import { useCreateSession, useStartSession, useRespond, useUploadVoice, useCloseSession } from "../../hooks/useInterviews";
+import { useMe, useScore } from "../../hooks/useScore";
+import { ScoreChip } from "../../components/ScoreChip";
+import { Button } from "../../components/Button";
 import { ChatInterface, type Message } from "./ChatInterface";
 import { TopicIndicator } from "./TopicIndicator";
 import { CoverageBar } from "./CoverageBar";
@@ -23,7 +26,7 @@ export function InterviewView() {
   const [converged, setConverged] = useState(false);
   const [claimIds, setClaimIds] = useState<string[]>([]);
   const [wsCoverage, setWsCoverage] = useState<number | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<ReturnType<typeof connectWs> | null>(null);
 
   const createSession = useCreateSession(PROJECT_ID);
   const startSession = useStartSession();
@@ -34,9 +37,13 @@ export function InterviewView() {
     queryFn: () => get(`/twin/coverage?project_id=${PROJECT_ID}`),
   });
 
+  // Employee's own knowledge-capture score (§7.6). Absent for non-employees.
+  const me = useMe();
+  const score = useScore(PROJECT_ID, me.data?.user_id);
+
   useEffect(() => {
     if (!activeSession) return;
-    const ws = connectWs(activeSession, (event: WsEvent) => {
+    const ws = connectWs(PROJECT_ID, activeSession, (event: WsEvent) => {
       if (event.type === "coverage_update" && typeof event.data.coverage_pct === "number") {
         setWsCoverage(event.data.coverage_pct as number);
       }
@@ -123,34 +130,32 @@ export function InterviewView() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b">
-        <CoverageBar
-          initialPct={coverage?.overall_coverage_pct ?? 0}
-          entityCount={coverage?.entity_count ?? 0}
-          wsPct={wsCoverage}
-        />
+      <div className="flex items-center gap-4 border-b px-4 py-3" style={{ borderColor: "var(--card-hairline)" }}>
+        <div className="min-w-0 flex-1">
+          <CoverageBar
+            initialPct={coverage?.overall_coverage_pct ?? 0}
+            entityCount={coverage?.entity_count ?? 0}
+            wsPct={wsCoverage}
+          />
+        </div>
+        {score.data && (
+          <ScoreChip score={score.data.score} components={score.data.components} claimCount={score.data.claim_count} />
+        )}
       </div>
 
       {!activeSession ? (
-        <div className="flex-1 p-4 space-y-4">
-          <button
-            onClick={handleCreate}
-            disabled={createSession.isPending}
-            className="px-4 py-2 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
-          >
+        <div className="flex-1 space-y-4 p-4">
+          <Button variant="primary" onClick={handleCreate} loading={createSession.isPending}>
             New Interview
-          </button>
+          </Button>
           <SessionHistory projectId={PROJECT_ID} onSelect={handleSelect} />
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 flex flex-col">
-            <div className="px-4 py-2 border-b flex items-center justify-between">
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 flex-col">
+            <div className="flex items-center justify-between border-b px-4 py-2" style={{ borderColor: "var(--card-hairline)" }}>
               <TopicIndicator topic={topic} converged={converged} />
-              <button
-                onClick={handleClose}
-                className="text-sm text-gray-500 hover:text-red-500"
-              >
+              <button onClick={handleClose} className="font-mono text-[11px] text-ink-3 transition-colors hover:text-ink-1">
                 End session
               </button>
             </div>
@@ -163,7 +168,7 @@ export function InterviewView() {
               />
             </div>
           </div>
-          <div className="w-72 border-l p-3 overflow-y-auto bg-gray-50">
+          <div className="w-72 overflow-y-auto border-l p-3" style={{ borderColor: "var(--card-hairline)", background: "var(--inset)" }}>
             <ClaimSidebar sessionId={activeSession} claimIds={claimIds} />
           </div>
         </div>

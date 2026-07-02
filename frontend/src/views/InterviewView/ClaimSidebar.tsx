@@ -1,7 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { del, get } from "../../lib/api";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { get } from "../../lib/api";
+import { useRequestDeletion } from "../../hooks/useDeletions";
+import { pushToast } from "../../lib/toast";
+import { GlassCard } from "../../components/GlassCard";
 import { SafeText } from "../../components/SafeText";
 import { CorroborationBadge } from "../../components/CorroborationBadge";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Loading } from "../../components/Loading";
 
 interface Claim {
@@ -17,8 +22,11 @@ interface ClaimSidebarProps {
   claimIds: string[];
 }
 
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 export function ClaimSidebar({ sessionId, claimIds }: ClaimSidebarProps) {
-  const qc = useQueryClient();
   const { data: claims, isLoading } = useQuery<Claim[]>({
     queryKey: ["session-claims", sessionId, claimIds.length],
     queryFn: async () => {
@@ -26,43 +34,64 @@ export function ClaimSidebar({ sessionId, claimIds }: ClaimSidebarProps) {
       const results: Claim[] = [];
       for (const id of claimIds.slice(-20)) {
         try {
-          const c = await get<Claim>(`/claims/${id}`);
-          results.push(c);
-        } catch { /* claim may not be accessible */ }
+          results.push(await get<Claim>(`/claims/${id}`));
+        } catch {
+          /* claim may not be accessible */
+        }
       }
       return results;
     },
     enabled: claimIds.length > 0,
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => del(`/claims/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["session-claims"] }),
-  });
+  const requestDeletion = useRequestDeletion();
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  const submit = (reason?: string) => {
+    if (!confirmId) return;
+    const claimId = confirmId;
+    setConfirmId(null);
+    requestDeletion.mutate(
+      { claimId, reason },
+      {
+        onSuccess: () => pushToast("Deletion requested — a curator will review it", { tone: "success" }),
+        onError: (e) => pushToast(`Request failed: ${errMsg(e)}`, { tone: "error" }),
+      },
+    );
+  };
 
   if (isLoading) return <Loading />;
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-semibold text-gray-700">Claims this session ({claimIds.length})</h3>
-      {(!claims || claims.length === 0) && (
-        <p className="text-sm text-gray-400">No claims yet</p>
-      )}
+      <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3">Claims this session ({claimIds.length})</h3>
+      {(!claims || claims.length === 0) && <p className="font-mono text-[12px] text-ink-3">No claims yet</p>}
       {claims?.map((c) => (
-        <div key={c.id} className="p-2 bg-white rounded border text-sm space-y-1">
-          <div className="flex items-center justify-between">
-            <SafeText text={`${c.subject_entity} — ${c.predicate}`} className="font-medium text-gray-800 text-xs" />
+        <GlassCard key={c.id} className="p-3">
+          <div className="flex items-center justify-between gap-2">
+            <SafeText text={`${c.subject_entity} · ${c.predicate}`} className="font-mono text-[12px] text-ink-1" />
             <CorroborationBadge level={c.corroboration_level} />
           </div>
-          <SafeText text={c.evidence_text} as="p" className="text-gray-600 text-xs line-clamp-2" />
+          <SafeText text={c.evidence_text} as="p" className="mt-1 line-clamp-2 font-body text-[12.5px] leading-relaxed text-ink-2" />
           <button
-            onClick={() => { if (confirm("Request deletion?")) deleteMutation.mutate(c.id); }}
-            className="text-xs text-red-500 hover:text-red-700"
+            type="button"
+            onClick={() => setConfirmId(c.id)}
+            className="mt-2 font-mono text-[11px] text-ink-2 underline underline-offset-2 transition-colors hover:text-ink-1"
           >
             Request deletion
           </button>
-        </div>
+        </GlassCard>
       ))}
+
+      <ConfirmDialog
+        open={!!confirmId}
+        title="Request deletion"
+        message="Ask a curator to delete this claim (right to erasure). You can add a reason."
+        confirmLabel="Request deletion"
+        notePrompt="Reason (optional)"
+        onConfirm={submit}
+        onCancel={() => setConfirmId(null)}
+      />
     </div>
   );
 }

@@ -1071,23 +1071,5 @@ async def list_needs_review(
     limit: int = Query(50, ge=1, le=200),
     actor: dict = Depends(get_current_user),
 ) -> dict:
-    """List triples pending human review (needs_review=true)."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT t.id, s.name AS subject, t.predicate, o.name AS object,
-                   t.original_predicate, t.mapper_confidence, t.source_agent, t.created_at
-            FROM triples t
-            JOIN nodes s ON s.id = t.subject_id
-            JOIN nodes o ON o.id = t.object_id
-            WHERE t.needs_review = true
-            ORDER BY t.created_at DESC
-            LIMIT $1
-        """, limit)
-    items = []
-    for r in rows:
-        item = dict(r)
-        if item.get("original_predicate") is not None:
-            item["original_predicate"] = item["original_predicate"][:MAX_PREDICATE_LEN]
-        items.append(item)
-    return {"items": items, "count": len(items)}
+    """List triples pending human review. KnowTwin schema has no needs_review column — returns empty."""
+    return {"items": [], "count": 0}

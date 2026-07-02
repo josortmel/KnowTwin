@@ -1,22 +1,16 @@
-const COLORS: Record<string, string> = {
-  draft: "bg-gray-200 text-gray-600",
-  single_source: "bg-blue-200 text-blue-800",
-  corroborated: "bg-green-200 text-green-800",
-  corroborated_by_employee: "bg-teal-200 text-teal-800",
-  validated: "bg-amber-200 text-amber-800",
-  rejected: "bg-red-200 text-red-800",
+import { Badge } from "./Badge";
+
+// Corroboration level (DESIGN.md §7.1) — the claim trust ladder, dot + ink.
+const MAP: Record<string, { color: string; label: string }> = {
+  draft: { color: "var(--claim-draft)", label: "Draft" },
+  single_source: { color: "var(--claim-single)", label: "Single source" },
+  corroborated: { color: "var(--claim-corroborated)", label: "Corroborated" },
+  corroborated_by_employee: { color: "var(--claim-corroborated-employee)", label: "Employee-confirmed" },
+  validated: { color: "var(--claim-validated)", label: "Validated" },
+  rejected: { color: "var(--claim-rejected)", label: "Rejected" },
 };
 
-interface CorroborationBadgeProps {
-  level: string;
-  className?: string;
-}
-
-export function CorroborationBadge({ level, className = "" }: CorroborationBadgeProps) {
-  const color = COLORS[level] ?? "bg-gray-100 text-gray-600";
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color} ${className}`}>
-      {level.replace(/_/g, " ")}
-    </span>
-  );
+export function CorroborationBadge({ level, className = "" }: { level: string; className?: string }) {
+  const m = MAP[level] ?? { color: "var(--ink-4)", label: level.replace(/_/g, " ") };
+  return <Badge color={m.color} label={m.label} className={className} />;
 }

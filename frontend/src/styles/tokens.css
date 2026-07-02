@@ -1,0 +1,210 @@
+/* ============================================================
+   KnowTwin — design tokens. Ported VERBATIM from EcoDB
+   (EcoDB/dashboard/src/styles/tokens.css). The chrome (brand,
+   geometry, ink, backdrop, glass) is shared with EcoDB unchanged.
+   Only the §2.8 color-coded signal layer is re-pointed to the
+   KnowTwin domain (DESIGN.md §7): claim level, coverage state,
+   dispute state, trust tier, sensitivity, and per-section color.
+
+   CSS custom properties scoped to [data-theme="light"|"dark"].
+   Theme-independent brand/geometry live on :root.
+   Do NOT hardcode any of these values elsewhere — reference the var.
+   ============================================================ */
+
+:root {
+  --font-mono: 'DM Mono', ui-monospace, monospace;
+  --font-body: 'Hanken Grotesk', system-ui, sans-serif;
+
+  /* Brand / semantic (theme-independent) — DESIGN.md §2.1 */
+  --accent: #f5631e;   /* primary signal orange */
+  --accent-2: #ff8a4c; /* lighter orange (hover) */
+  --grn: #4e9e6a;      /* positive / ok / clear */
+  --red: #de4630;      /* alert / negative / unknown */
+
+  /* Geometry — DESIGN.md §2.6 */
+  --r-xl: 26px; /* tray */
+  --r-lg: 20px; /* card */
+  --r-md: 13px; /* screen / inset */
+  --r-sm: 8px;  /* chip / slot */
+  --r-btn: 11px; /* button */
+  --drawer-blur: 34px; /* §2.5 — 3rd depth layer (modal drawer) backdrop blur */
+  --palette-saturate: 1.7; /* ⌘K palette sits at z-80 — a touch more saturation than the drawer */
+
+  /* ==========================================================
+     Color-coded signal — re-pointed to the KnowTwin domain layer
+     (DESIGN.md §7). The EcoDB hues are kept as the palette; only
+     what they *signify* changes. Rendered as dot + ink label per
+     the §1.3 WCAG norm — never as colored text fill or panel.
+     ========================================================== */
+
+  /* §7.1 Corroboration level (claim lifecycle) — CorroborationBadge.
+     Trust ladder: grey (unshipped) → green (validated). */
+  --claim-draft: var(--ink-4);                  /* not embedded, not shown to Twin */
+  --claim-single: #6e9ecf;                      /* one source, embedded */
+  --claim-corroborated: #4fa0a0;                /* multiple documentary sources */
+  --claim-corroborated-employee: #c4a86a;       /* employee confirmed in interview */
+  --claim-validated: var(--grn);                /* human-approved, top of ladder */
+  --claim-rejected: var(--red);                 /* soft-deleted, embedding removed */
+
+  /* §7.2 Coverage state (entity knowledge completeness) —
+     CoverageStateBadge / CoverageMeter. */
+  --cov-unknown: var(--red);                    /* 0 confirmed claims — a gap */
+  --cov-partial: #c98a3c;                       /* some coverage, below threshold */
+  --cov-clear: var(--grn);                      /* ≥50% criticality-weighted coverage */
+  --cov-disputed: var(--accent);                /* has an open dispute — demands attention */
+  --cov-validated: #6e9ecf;                     /* has a human-validated claim */
+  --cov-stale: var(--ink-3);                    /* evidence past freshness window */
+
+  /* §7.3 Dispute state — DisputeBadge.
+     (undisputed = no badge, not a var — don't add noise.) */
+  --disp-disputed: var(--accent);               /* open, needs a resolver */
+  --disp-resolved-for: var(--grn);              /* resolved in favor */
+  --disp-resolved-against: var(--ink-3);        /* resolved against */
+
+  /* §7.4 Trust tier & sensitivity — TrustTierBadge, SensitivityBadge. */
+  --trust-0: var(--ink-4);                       /* inferred */
+  --trust-1: #6e9ecf;                            /* documentary */
+  --trust-2: var(--grn);                         /* formal / recent */
+  --sens-public: var(--grn);                     /* public */
+  --sens-team: #c4a86a;                          /* team */
+  --sens-restricted: var(--red);                 /* restricted (interview default) */
+
+  /* §7.5 Per-section color — nav rail + active state, role-based. */
+  --sec-dashboard: #f5631e;  /* command center — the home, carries the brand hue */
+  --sec-setup: #d98c4a;      /* curation — amber (Dashboard now owns the brand hue) */
+  --sec-interview: #5c8fc9;  /* employee conversation */
+  --sec-explorer: #6478b4;   /* claims explorer — steel/indigo (distinct from interview) */
+  --sec-twin: #4e9e6a;       /* consumer query — the payoff, "clear" green */
+  --sec-graph: #4fa0a0;      /* knowledge graph — teal (green is taken by twin) */
+  --sec-ingestion: #5baab5;  /* document ingestion — cyan (distinct from graph teal) */
+  --sec-ontology: #8e78bc;   /* ontology console — violet (EcoDB §2.9) */
+  --sec-decisions: #c98a3c;  /* decisions inbox — amber (§7.5) */
+  --sec-settings: #8a8f9c;   /* slate */
+  --sec-manager: #d98c4a;    /* deferred — overview / oversight */
+
+  /* Primary button — TERRACOTA, deliberately not orange (orange = signal only,
+     DESIGN.md §3). Applied by the GlassButton/Button. */
+  /* BH-V-H1: darkened so white 13px text clears 4.5:1 across the WHOLE gradient.
+     Top stop measured: #d5704a=3.36 (orig), #c45d38=4.23 (Lienzo's, still <4.5),
+     #bd5836=4.55 (used). Stops now 4.55 / 5.03 / 6.22 white. Still terracotta. */
+  --btn-primary: linear-gradient(180deg, #bd5836, #b6502f, #a04528);
+
+  /* Toggle ON track — orange "on" signal (DESIGN.md §1.3 / §3). */
+  --toggle-on-start: #f2702a;
+  --toggle-on-end: #e2561a;
+
+  /* Cursor-tracked specular origin (updated on pointermove) — §2.5 */
+  --mx: 50%;
+  --my: 0%;
+}
+
+/* ---------- LIGHT (primary theme) — warm ivory + bright white glass ---------- */
+[data-theme='light'] {
+  --bd-1: #ece9e3;
+  --bd-2: #ddd9d1;
+  --bd-3: #d2cdc3;
+  --blob-warm: rgba(245, 150, 70, 0.18);
+  --blob-cool: rgba(120, 140, 160, 0.1);
+  --grain: 0.035;
+
+  /* tray = the liquid-glass background panel */
+  --tray-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.42), rgba(238, 236, 231, 0.22));
+  --tray-edge: rgba(255, 255, 255, 0.7);
+  --tray-shadow: 0 2px 1px rgba(255, 255, 255, 0.5) inset, 0 30px 60px -30px rgba(60, 55, 48, 0.4);
+
+  /* card = floating frosted glass */
+  --card-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.74), rgba(252, 252, 250, 0.55));
+  --card-edge: rgba(255, 255, 255, 0.95);
+  --card-edge-lo: rgba(255, 255, 255, 0.45);
+  --card-spec: rgba(255, 255, 255, 0.95);
+  --card-hairline: rgba(40, 38, 34, 0.08);
+  --elev:
+    0 1.5px 0 rgba(255, 255, 255, 0.85) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.4) inset,
+    0 1px 2px rgba(50, 46, 40, 0.05),
+    0 10px 20px -10px rgba(50, 46, 40, 0.22),
+    0 26px 48px -22px rgba(50, 46, 40, 0.26);
+  --elev-hi:
+    0 1.5px 0 rgba(255, 255, 255, 0.9) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset,
+    0 14px 26px -10px rgba(50, 46, 40, 0.28),
+    0 34px 60px -24px rgba(50, 46, 40, 0.32);
+
+  --ink-1: #1f1d1a;
+  --ink-2: #5e584f;
+  /* ink-3 light bumped to ≥4.5:1 (was #6f695e = 3.87 on bd-2) — legibility, WCAG AA for small text */
+  --ink-3: #625c52;
+  --ink-4: #a9a397;
+  --inset: rgba(40, 38, 34, 0.05);
+  --inset-edge: rgba(255, 255, 255, 0.7);
+
+  --chart-grid: rgba(40, 38, 34, 0.07);
+  --chart-line: #45413a;
+  --chart-fill-1: rgba(74, 70, 63, 0.22);
+  --chart-fill-2: rgba(74, 70, 63, 0);
+  --chart-bar: rgba(74, 70, 63, 0.24);
+
+  --screen-bg: linear-gradient(165deg, #26282c, #161719);
+  --node: #eef0f2;
+  --node-hot: #ff7a3c;
+  --edge: rgba(210, 214, 220, 0.16);
+  --screen-grid: rgba(255, 255, 255, 0.05);
+  --screen-text: rgba(240, 236, 228, 0.85);
+
+  --scroll: rgba(40, 38, 34, 0.18);
+  --field-bg: rgba(255, 255, 255, 0.5);
+}
+
+/* ---------- DARK — midnight blue-black + cool slate glass ---------- */
+[data-theme='dark'] {
+  --bd-1: #12151b;
+  --bd-2: #0c0f14;
+  --bd-3: #07080c;
+  --blob-warm: rgba(245, 120, 40, 0.1);
+  --blob-cool: rgba(72, 116, 182, 0.11);
+  --grain: 0.05;
+
+  --tray-bg: linear-gradient(150deg, rgba(56, 64, 80, 0.34), rgba(20, 24, 32, 0.18));
+  --tray-edge: rgba(200, 218, 245, 0.12);
+  --tray-shadow: 0 1px 0 rgba(200, 218, 245, 0.05) inset, 0 30px 70px -30px rgba(0, 0, 0, 0.78);
+
+  --card-bg: linear-gradient(155deg, rgba(48, 56, 70, 0.46), rgba(20, 24, 32, 0.33));
+  --card-edge: rgba(208, 222, 248, 0.18);
+  --card-edge-lo: rgba(208, 222, 248, 0.06);
+  --card-spec: rgba(214, 228, 252, 0.2);
+  --card-hairline: rgba(0, 0, 0, 0.42);
+  --elev:
+    0 1px 0 rgba(206, 222, 250, 0.09) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.42) inset,
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    0 12px 24px -10px rgba(0, 0, 0, 0.6),
+    0 30px 56px -24px rgba(0, 0, 0, 0.66);
+  --elev-hi:
+    0 1px 0 rgba(206, 222, 250, 0.13) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.46) inset,
+    0 16px 30px -10px rgba(0, 0, 0, 0.66),
+    0 40px 70px -26px rgba(0, 0, 0, 0.74);
+
+  --ink-1: #eef1f7;
+  --ink-2: #b6bdca;
+  --ink-3: #868e9c;
+  --ink-4: #4a505c;
+  --inset: rgba(0, 0, 0, 0.3);
+  --inset-edge: rgba(206, 222, 250, 0.05);
+
+  --chart-grid: rgba(206, 222, 250, 0.06);
+  --chart-line: #cdd4e0;
+  --chart-fill-1: rgba(205, 212, 224, 0.2);
+  --chart-fill-2: rgba(205, 212, 224, 0);
+  --chart-bar: rgba(205, 212, 224, 0.2);
+
+  --screen-bg: linear-gradient(165deg, #161a20, #090b0f);
+  --node: #e6eaf0;
+  --node-hot: #ff7a3c;
+  --edge: rgba(150, 160, 176, 0.14);
+  --screen-grid: rgba(200, 216, 255, 0.05);
+  --screen-text: rgba(236, 240, 248, 0.85);
+
+  --scroll: rgba(206, 222, 250, 0.16);
+  --field-bg: rgba(0, 0, 0, 0.24);
+}

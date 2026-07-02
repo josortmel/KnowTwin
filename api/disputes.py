@@ -83,7 +83,13 @@ async def _compute_breakdown(conn, claim_row: dict) -> Optional[DocStrengthBreak
         claim_row["project_id"], claim_row["subject_entity"],
         claim_row["predicate"], claim_row.get("object_value"),
     )
-    freshness_score = 1.0
+    from datetime import datetime, timezone
+    source_date = claim_row.get("source_date") or claim_row.get("created_at")
+    if source_date:
+        days_old = (datetime.now(timezone.utc) - source_date).days
+        freshness_score = max(0.1, min(1.0, 1.0 - days_old / 365.0))
+    else:
+        freshness_score = 1.0
     trust_tier = claim_row.get("trust_tier") or 0
     return DocStrengthBreakdown(
         source_count=source_count,
@@ -133,7 +139,7 @@ _DISPUTE_COLS = (
     "id, subject_entity, predicate, object_value, evidence_text, sanitized_text, "
     "source_type, sensitivity, corroboration_level, dispute_state, criticality, "
     "doc_strength, resolution_note, resolved_by_user_id, resolver_user_id, "
-    "trust_tier, project_id, disputed_by_claim_id"
+    "trust_tier, project_id, disputed_by_claim_id, source_date, created_at"
 )
 
 

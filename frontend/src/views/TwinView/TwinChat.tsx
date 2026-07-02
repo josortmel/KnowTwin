@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { SafeText } from '../../components/SafeText';
-import { Loading } from '../../components/Loading';
-import { useTwinQuery, type TwinResponse } from '../../hooks/useTwin';
+import { useState } from "react";
+import { SafeText } from "../../components/SafeText";
+import { Loading } from "../../components/Loading";
+import { GlassCard } from "../../components/GlassCard";
+import { Button } from "../../components/Button";
+import { Dot } from "../../components/Dot";
+import { useTwinQuery, type TwinResponse } from "../../hooks/useTwin";
 
 interface Props {
   projectId: number;
@@ -9,57 +12,57 @@ interface Props {
 }
 
 export default function TwinChat({ projectId, onResult }: Props) {
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState("");
+  const [focused, setFocused] = useState(false);
   const mutation = useTwinQuery();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
-    mutation.mutate(
-      { question: question.trim(), project_id: projectId },
-      { onSuccess: (data) => onResult(data) },
-    );
+    mutation.mutate({ question: question.trim(), project_id: projectId }, { onSuccess: (data) => onResult(data) });
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {mutation.data && (
-          <div className="bg-gray-50 rounded p-4">
-            <h3 className="font-semibold text-sm text-gray-500 mb-2">Answer</h3>
-            <div className="whitespace-pre-wrap">
-              <SafeText text={mutation.data.answer} />
-            </div>
+          <GlassCard className="p-card-lg">
+            <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">Answer</div>
+            {/* Twin answer text via SafeText. */}
+            <SafeText text={mutation.data.answer} as="div" className="whitespace-pre-wrap font-body text-[13.5px] leading-relaxed text-ink-1" />
             {mutation.data.sources.length > 0 && (
-              <div className="mt-3 text-xs text-gray-400">
-                <SafeText text={`${mutation.data.sources.length} source(s) cited`} />
-              </div>
+              <div className="mt-3 font-mono text-[10px] text-ink-3">{mutation.data.sources.length} source(s) cited</div>
             )}
-          </div>
+          </GlassCard>
         )}
-        {mutation.isPending && <Loading />}
+        {mutation.isPending && <Loading message="Asking the twin…" />}
         {mutation.isError && (
-          <div className="text-red-600 text-sm">
-            <SafeText text={`Error: ${mutation.error?.message || 'query failed'}`} />
+          <div className="flex items-center gap-2">
+            <Dot s="alert" glow />
+            <SafeText text={mutation.error?.message || "query failed"} className="font-mono text-[12px] text-ink-2" />
           </div>
         )}
       </div>
-      <form onSubmit={handleSubmit} className="border-t p-4 flex gap-2">
+      <form onSubmit={handleSubmit} className="flex gap-2 border-t p-4" style={{ borderColor: "var(--card-hairline)" }}>
         <input
           type="text"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask the twin..."
-          className="flex-1 border rounded px-3 py-2 text-sm"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="Ask the twin…"
           disabled={mutation.isPending}
+          className="min-w-0 flex-1 rounded-md px-3 py-2 font-body text-[13.5px] text-ink-1 outline-none placeholder:text-ink-3"
+          style={{
+            background: "var(--field-bg)",
+            boxShadow: focused
+              ? "inset 0 0 0 1px var(--accent), 0 0 0 3px rgba(245,99,30,0.16)"
+              : "inset 0 1px 3px var(--inset), inset 0 0 0 1px var(--card-hairline)",
+          }}
         />
-        <button
-          type="submit"
-          disabled={mutation.isPending || !question.trim()}
-          className="bg-blue-600 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={mutation.isPending} disabled={!question.trim()}>
           Ask
-        </button>
+        </Button>
       </form>
     </div>
   );

@@ -1,37 +1,43 @@
-import { useState } from "react";
+import { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { AppShell } from "./components/AppShell";
+import { DashboardPage } from "./pages/DashboardPage";
 import { SetupPage } from "./pages/SetupPage";
 import { InterviewPage } from "./pages/InterviewPage";
 import { TwinPage } from "./pages/TwinPage";
-import { SettingsDrawer } from "./components/SettingsDrawer";
+import { OntologyPage } from "./pages/OntologyPage";
+import { IngestionPage } from "./pages/IngestionPage";
+import { ExplorerPage } from "./pages/ExplorerPage";
+import { DecisionsPage } from "./pages/DecisionsPage";
 
+// Graph pulls in react-force-graph-2d + d3-force (~200kB). Code-split it so the
+// rest of the app doesn't pay for a route the user may never open.
+const GraphPage = lazy(() => import("./pages/GraphPage").then((m) => ({ default: m.GraphPage })));
+
+// The glass shell (NavRail + AppBar + Settings drawer) wraps the routed views.
+// Views still render their current content inside; the chrome is the new part.
 export function AppRouter() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b px-4 py-2 flex items-center justify-between">
-        <span className="font-semibold text-lg">KnowTwin</span>
-        <div className="flex gap-4">
-          <a href="/setup" className="hover:underline">Setup</a>
-          <a href="/interview" className="hover:underline">Interview</a>
-          <a href="/twin" className="hover:underline">Twin</a>
-          <button onClick={() => setSettingsOpen(true)} className="hover:underline">
-            Settings
-          </button>
-        </div>
-      </nav>
-
-      <main className="p-4">
-        <Routes>
-          <Route path="/setup" element={<SetupPage />} />
-          <Route path="/interview" element={<InterviewPage />} />
-          <Route path="/twin" element={<TwinPage />} />
-          <Route path="*" element={<Navigate to="/setup" replace />} />
-        </Routes>
-      </main>
-
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-    </div>
+    <AppShell>
+      <Routes>
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/setup" element={<SetupPage />} />
+        <Route path="/interview" element={<InterviewPage />} />
+        <Route path="/twin" element={<TwinPage />} />
+        <Route path="/explorer" element={<ExplorerPage />} />
+        <Route path="/ingestion" element={<IngestionPage />} />
+        <Route path="/ontology" element={<OntologyPage />} />
+        <Route path="/decisions" element={<DecisionsPage />} />
+        <Route
+          path="/graph"
+          element={
+            <Suspense fallback={<div className="grid h-full place-items-center font-mono text-[12px] text-ink-3">Loading graph…</div>}>
+              <GraphPage />
+            </Suspense>
+          }
+        />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </AppShell>
   );
 }

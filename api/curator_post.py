@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 import asyncpg
@@ -90,7 +91,7 @@ async def run_curator_post(pool: asyncpg.Pool, session_id: str) -> dict:
 
                 doc_claims = await conn.fetch("""
                     SELECT id, object_value, trust_tier, corroboration_level,
-                           dispute_state, doc_strength, source_id
+                           dispute_state, doc_strength, source_id, source_date, created_at
                     FROM claims
                     WHERE project_id = $1 AND subject_entity = $2 AND predicate = $3
                       AND source_type = 'document'
@@ -108,7 +109,12 @@ async def run_curator_post(pool: asyncpg.Pool, session_id: str) -> dict:
                             "AND object_value = $4 AND source_type = 'document'",
                             pid, tc["subject_entity"], tc["predicate"], dc["object_value"],
                         )
-                        freshness = 1.0
+                        source_date = dc.get("source_date") or dc.get("created_at")
+                        if source_date:
+                            days_old = (datetime.now(timezone.utc) - source_date).days
+                            freshness = max(0.1, min(1.0, 1.0 - days_old / 365.0))
+                        else:
+                            freshness = 1.0
                         strength = compute_doc_strength(source_count, freshness, dc["trust_tier"] or 0)
 
                         if strength < DOC_STRENGTH_THRESHOLD:

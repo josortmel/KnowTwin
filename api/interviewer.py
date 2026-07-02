@@ -280,16 +280,17 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
             claim_id = await conn.fetchval(
                 """
                 INSERT INTO claims
-                (user_id, project_id, subject_entity, predicate, object_value,
-                 evidence_text, source_type, employee_id, session_id, sensitivity,
-                 corroboration_level, criticality)
-                VALUES ($1, $2, $3, $4, $5, $6, 'interview', $7, $8, 'restricted',
-                        'single_source', $9)
+                (user_id, project_id, subject_entity, predicate, object_entity,
+                 object_value, evidence_text, source_type, employee_id, session_id,
+                 sensitivity, corroboration_level, criticality)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 'interview', $8, $9, 'restricted',
+                        'single_source', $10)
                 RETURNING id
                 """,
                 state.employee_id, state.project_id,
                 subject, cd.get("predicate", "relates_to")[:200],
-                cd.get("object_value"), cd["evidence_text"][:2000],
+                cd.get("object_entity"), cd.get("object_value"),
+                cd["evidence_text"][:2000],
                 state.employee_id, state.session_id,
                 criticality,
             )
@@ -312,6 +313,28 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
                         "UPDATE claims SET embedding = $1::vector WHERE id = $2",
                         str(vec), claim_id,
                     )
+                    from graph import _ensure_node, _create_age_edge
+                    subj_nid = await _ensure_node(conn, subject)
+                    await conn.execute(
+                        "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                        "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                        claim_id, subj_nid,
+                    )
+                    obj_name = cd.get("object_entity") or cd.get("object_value")
+                    if obj_name:
+                        obj_nid = await _ensure_node(conn, obj_name[:500])
+                        await conn.execute(
+                            "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                            "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                            claim_id, obj_nid,
+                        )
+                        t_row = await conn.fetchrow(
+                            "INSERT INTO triples (subject_id, predicate, object_id, claim_id) "
+                            "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+                            subj_nid, cd.get("predicate", "relates_to")[:200], obj_nid, claim_id,
+                        )
+                        if t_row is not None:
+                            await _create_age_edge(conn, subj_nid, cd.get("predicate", "relates_to")[:200], obj_nid)
                 else:
                     log.warning("Embed returned None for claim %s — removing (gate invariant)", claim_id)
                     await conn.execute("DELETE FROM claims WHERE id = $1", claim_id)

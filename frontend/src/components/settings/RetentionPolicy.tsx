@@ -1,33 +1,44 @@
 import { useState, useEffect } from "react";
 import { get, put } from "../../lib/api";
+import { Button } from "../Button";
+import { Toggle } from "../Toggle";
+import { pushToast } from "../../lib/toast";
 
 interface Props {
   projectId: number;
 }
 
+interface RetentionConfig {
+  retention_days?: number | null;
+  auto_expiry?: boolean;
+}
+
 export function RetentionPolicy({ projectId }: Props) {
-  const [expireDays, setExpireDays] = useState<number | null>(null);
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
   const [autoExpiry, setAutoExpiry] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    get<{ config: { retention?: { expire_days: number | null; auto_expiry: boolean } } }>(
-      `/projects/${projectId}/settings`
-    ).then((r) => {
-      const ret = r.config.retention;
-      if (ret) {
-        setExpireDays(ret.expire_days);
-        setAutoExpiry(ret.auto_expiry);
-      }
-    }).catch(() => {});
+    get<{ config: { retention?: RetentionConfig } }>(`/projects/${projectId}/settings`)
+      .then((r) => {
+        const ret = r.config?.retention;
+        if (ret) {
+          setRetentionDays(ret.retention_days ?? null);
+          setAutoExpiry(!!ret.auto_expiry);
+        }
+      })
+      .catch(() => {});
   }, [projectId]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await put(`/projects/${projectId}/settings`, {
-        retention: { expire_days: autoExpiry ? expireDays : null, auto_expiry: autoExpiry },
+        retention: { retention_days: autoExpiry ? retentionDays ?? 365 : null, auto_expiry: autoExpiry },
       });
+      pushToast("Retention policy saved", { tone: "success" });
+    } catch (e) {
+      pushToast(`Save failed: ${e instanceof Error ? e.message : String(e)}`, { tone: "error" });
     } finally {
       setSaving(false);
     }
@@ -35,36 +46,28 @@ export function RetentionPolicy({ projectId }: Props) {
 
   return (
     <div>
-      <h3 className="text-sm font-semibold mb-2">Retention Policy</h3>
-      <label className="flex items-center gap-2 text-xs mb-2">
-        <input
-          type="checkbox"
-          checked={autoExpiry}
-          onChange={(e) => setAutoExpiry(e.target.checked)}
-        />
+      <div className="mb-2 flex items-center gap-2 font-mono text-[11px] text-ink-2">
+        <Toggle on={autoExpiry} onChange={setAutoExpiry} label="Auto-expire claims" />
         Auto-expire claims
-      </label>
+      </div>
       {autoExpiry && (
-        <div className="flex items-center gap-2 text-xs mb-2">
+        <div className="mb-2 flex items-center gap-2 font-mono text-[11px] text-ink-2">
           <span>Expire after</span>
           <input
             type="number"
             min={1}
             max={3650}
-            value={expireDays ?? 365}
-            onChange={(e) => setExpireDays(parseInt(e.target.value) || 365)}
-            className="border rounded px-1 py-0.5 w-20 text-xs"
+            value={retentionDays ?? 365}
+            onChange={(e) => setRetentionDays(parseInt(e.target.value) || 365)}
+            className="w-20 rounded-sm px-2 py-1 font-mono text-[12px] text-ink-1 outline-none"
+            style={{ background: "var(--field-bg)", boxShadow: "inset 0 0 0 1px var(--card-hairline)" }}
           />
           <span>days</span>
         </div>
       )}
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="bg-blue-600 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
-      >
-        {saving ? "Saving..." : "Save Policy"}
-      </button>
+      <Button variant="primary" onClick={handleSave} loading={saving} className="px-3 py-1.5 text-[12px]">
+        Save policy
+      </Button>
     </div>
   );
 }

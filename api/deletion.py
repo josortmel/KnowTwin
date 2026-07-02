@@ -49,8 +49,21 @@ async def gdpr_erase_claim(conn, claim_id, requester_id: int, reason_code: str):
         )
         pre_session_id = pre_row["session_id"] if pre_row else None
 
+        # Read entity links BEFORE deleting (needed for co-occurrence cleanup)
+        linked_node_ids = [
+            r["entity_node_id"] for r in await conn.fetch(
+                "SELECT entity_node_id FROM claim_entity_links WHERE claim_id = $1", claim_id
+            )
+        ]
+
         # Link table cleanup (survive UPDATE — CASCADE only fires on DELETE)
         await conn.execute("DELETE FROM triples WHERE claim_id = $1", claim_id)
+        if linked_node_ids:
+            await conn.execute(
+                "DELETE FROM triples WHERE author = 'system:cooccurrence' "
+                "AND (subject_id = ANY($1::int[]) OR object_id = ANY($1::int[]))",
+                linked_node_ids,
+            )
         await conn.execute("DELETE FROM claim_entity_links WHERE claim_id = $1", claim_id)
         await conn.execute("DELETE FROM claim_document_links WHERE claim_id = $1", claim_id)
 

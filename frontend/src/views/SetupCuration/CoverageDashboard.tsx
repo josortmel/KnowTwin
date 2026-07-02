@@ -1,52 +1,61 @@
 import { useCoverage } from "../../hooks/useCoverage";
 import { SafeText } from "../../components/SafeText";
-import { StateBadge } from "../../components/StateBadge";
-import { Loading } from "../../components/Loading";
-import { EmptyState } from "../../components/EmptyState";
+import { CoverageStateBadge } from "../../components/CoverageStateBadge";
+import { Panel, PanelState } from "../../components/Panel";
 
-interface Props { projectId: number }
+interface Props {
+  projectId: number;
+}
 
 export function CoverageDashboard({ projectId }: Props) {
   const { data, isLoading, error } = useCoverage(projectId);
 
   return (
-    <div className="border rounded p-4">
-      <h3 className="font-semibold mb-3">Coverage</h3>
-      {isLoading && <Loading />}
-      {error && <p className="text-red-500 text-sm">{String(error)}</p>}
-      {data && (
-        <>
-          <div className="mb-3">
-            <div className="flex justify-between text-sm mb-1">
-              <span>Overall coverage</span>
-              <span className="font-mono">{data.overall_coverage_pct}%</span>
+    <Panel title="Coverage">
+      <PanelState loading={isLoading} error={!!error} empty={!!data && data.entities.length === 0} emptyLabel="No coverage data">
+        {data && (
+          <>
+            <div className="mb-3">
+              <div className="mb-1 flex justify-between font-mono text-[12px] text-ink-2">
+                <span className="uppercase tracking-[0.1em] text-ink-3">Overall coverage</span>
+                <span className="tabular-nums text-ink-1">{data.overall_coverage_pct}%</span>
+              </div>
+              <div className="h-3 w-full overflow-hidden rounded-full" style={{ background: "var(--inset)" }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(data.overall_coverage_pct, 100)}%`, background: "var(--chart-bar)" }} />
+              </div>
+              <p className="mt-1 font-mono text-[10px] text-ink-3">{data.entity_count} entities tracked</p>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
-              <div className="bg-blue-600 h-3 rounded-full transition-all"
-                style={{ width: `${Math.min(data.overall_coverage_pct, 100)}%` }} />
-            </div>
-            <p className="text-xs text-gray-400 mt-1">{data.entity_count} entities tracked</p>
-          </div>
-          {data.entities.length === 0 && <EmptyState message="No coverage data" />}
-          {data.entities.length > 0 && (
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-gray-500 border-b">
-                <th className="py-1">Entity</th><th>Type</th><th>Coverage</th><th>State</th>
-              </tr></thead>
-              <tbody>
-                {data.entities.map(e => (
-                  <tr key={e.entity_name} className="border-b">
-                    <td className="py-1"><SafeText text={e.entity_name} /></td>
-                    <td className="text-gray-500"><SafeText text={e.entity_type} /></td>
-                    <td className="font-mono">{e.coverage_pct}%</td>
-                    <td><StateBadge state={e.coverage_state} /></td>
+            {data.entities.length > 0 && (
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b text-left font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3" style={{ borderColor: "var(--card-hairline)" }}>
+                    <th className="py-1 font-normal">Entity</th>
+                    <th className="font-normal">Type</th>
+                    <th className="font-normal">Coverage</th>
+                    <th className="font-normal">State</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </>
-      )}
-    </div>
+                </thead>
+                <tbody>
+                  {data.entities.map((e) => (
+                    <tr key={e.entity_name} className="border-b" style={{ borderColor: "var(--card-hairline)" }}>
+                      <td className="py-1 text-ink-1">
+                        <SafeText text={e.entity_name} />
+                      </td>
+                      <td className="text-ink-3">
+                        <SafeText text={e.entity_type} />
+                      </td>
+                      <td className="font-mono tabular-nums text-ink-2">{e.coverage_pct}%</td>
+                      <td>
+                        <CoverageStateBadge state={e.coverage_state} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+      </PanelState>
+    </Panel>
   );
 }

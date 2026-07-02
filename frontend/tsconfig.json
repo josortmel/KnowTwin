@@ -19,5 +19,12 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/main.ts",
+    "src/preload.ts",
+    "src/secure-store.ts",
+    "src/config-store.ts",
+    "src/lib/api-url.ts"
+  ]
 }

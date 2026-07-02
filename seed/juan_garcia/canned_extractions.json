@@ -1,30 +1,82 @@
 {
   "plan_banco_norte": {"claims": [
-    {"subject_entity": "Banco Norte", "predicate": "contacto_clave", "object_value": "Elena Ros", "evidence_text": "Elena Ros actúa como contacto secundario para temas operativos"},
-    {"subject_entity": "Banco Norte", "predicate": "acuerdo_informal", "object_value": "SLA 4h P1", "evidence_text": "SLA contractual: 4 horas de respuesta para incidencias P1"}
+    {"subject_entity": "Juan Garcia", "predicate": "gestiona", "object_entity": "Banco Norte", "evidence_text": "Juan Garcia gestiona la cuenta de Banco Norte como account lead"},
+    {"subject_entity": "Juan Garcia", "predicate": "coordina_con", "object_entity": "Elena Ros", "evidence_text": "Juan Garcia coordina directamente con Elena Ros para operaciones diarias de Banco Norte"},
+    {"subject_entity": "Carlos Ruiz", "predicate": "gestiona", "object_entity": "Banco Norte", "evidence_text": "Carlos Ruiz figura como account manager formal de Banco Norte"},
+    {"subject_entity": "Elena Ros", "predicate": "contacto_clave", "object_entity": "Banco Norte", "evidence_text": "Elena Ros actúa como contacto clave para temas operativos de Banco Norte"},
+    {"subject_entity": "Banco Norte", "predicate": "exige", "object_entity": "Dashboard Financiero", "evidence_text": "Banco Norte requiere acceso al Dashboard Financiero con datos actualizados cada hora"},
+    {"subject_entity": "Banco Norte", "predicate": "exige", "object_entity": "Monthly Reporting", "evidence_text": "Contrato Banco Norte exige reporting mensual con métricas de SLA y disponibilidad"},
+    {"subject_entity": "Banco Norte", "predicate": "riesgo_activo", "object_value": "contract renewal pending", "evidence_text": "La renovación del contrato con Banco Norte está en fase de negociación"},
+    {"subject_entity": "Juan Garcia", "predicate": "negocia_con", "object_entity": "Elena Ros", "evidence_text": "Juan Garcia negocia las condiciones de renovación directamente con Elena Ros"}
   ]},
   "adr_postgresql": {"claims": [
-    {"subject_entity": "PostgreSQL Migration", "predicate": "timeline", "object_value": "Q3 2025", "evidence_text": "Timeline: Q3 2025"}
+    {"subject_entity": "Maria Lopez", "predicate": "lidera", "object_entity": "PostgreSQL Migration", "evidence_text": "Maria Lopez lidera el proyecto de migración a PostgreSQL como arquitecta principal"},
+    {"subject_entity": "PostgreSQL Migration", "predicate": "depende_de", "object_entity": "ETL Pipeline", "evidence_text": "La migración PostgreSQL depende del ETL Pipeline para la transferencia de datos históricos"},
+    {"subject_entity": "PostgreSQL Migration", "predicate": "depende_de", "object_entity": "Data Warehouse", "evidence_text": "El Data Warehouse será reconstruido como parte de la migración PostgreSQL"},
+    {"subject_entity": "Juan Garcia", "predicate": "participa_en", "object_entity": "PostgreSQL Migration", "evidence_text": "Juan Garcia participa en la migración PostgreSQL como responsable de la capa ETL"},
+    {"subject_entity": "Ana Torres", "predicate": "participa_en", "object_entity": "PostgreSQL Migration", "evidence_text": "Ana Torres participa en la migración PostgreSQL para adaptar el API Gateway"},
+    {"subject_entity": "Luis Fernandez", "predicate": "participa_en", "object_entity": "PostgreSQL Migration", "evidence_text": "Luis Fernandez gestiona la infraestructura cloud para la migración PostgreSQL"},
+    {"subject_entity": "PostgreSQL Migration", "predicate": "timeline", "object_value": "Q3 2025", "evidence_text": "Timeline objetivo para completar la migración: Q3 2025"}
   ]},
   "contrato_cloudbase": {"claims": [
-    {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "4 hours", "evidence_text": "Incidencias P1 (críticas): 4 horas de tiempo de respuesta"}
+    {"subject_entity": "CloudBase", "predicate": "proveedor_de", "object_entity": "Data Warehouse", "evidence_text": "CloudBase provee la infraestructura cloud para el Data Warehouse"},
+    {"subject_entity": "CloudBase", "predicate": "proveedor_de", "object_entity": "CI/CD Pipeline", "evidence_text": "CloudBase proporciona los runners y la infraestructura para el CI/CD Pipeline"},
+    {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "4 hours", "evidence_text": "Incidencias P1 (críticas): 4 horas de tiempo de respuesta contractual"},
+    {"subject_entity": "Juan Garcia", "predicate": "negocia_con", "object_entity": "Sergio Blanco", "evidence_text": "Juan Garcia mantiene relación directa con Sergio Blanco, soporte lead de CloudBase"},
+    {"subject_entity": "Luis Fernandez", "predicate": "coordina_con", "object_entity": "CloudBase", "evidence_text": "Luis Fernandez coordina con CloudBase las migraciones de infraestructura"}
   ]},
   "organigrama_equipo": {"claims": [
-    {"subject_entity": "Juan Garcia", "predicate": "responsable_real", "object_value": "Team Lead", "evidence_text": "Team Lead: Juan Garcia"},
-    {"subject_entity": "Banco Norte", "predicate": "decide_en", "object_value": "Carlos Ruiz", "evidence_text": "Organigrama muestra a Carlos Ruiz como responsable de cuenta Banco Norte"},
-    {"subject_entity": "ETL Pipeline", "predicate": "domina", "object_value": "Maria Lopez", "evidence_text": "Organigrama: Maria Lopez como propietaria del ETL Pipeline"},
-    {"subject_entity": "PostgreSQL Migration", "predicate": "responsable_real", "object_value": "Maria Lopez", "evidence_text": "Organigrama lista a Maria Lopez como líder de migración PostgreSQL"}
+    {"subject_entity": "Juan Garcia", "predicate": "lidera", "object_entity": "Incident Response", "evidence_text": "Juan Garcia lidera el proceso de respuesta a incidencias como coordinador principal"},
+    {"subject_entity": "Juan Garcia", "predicate": "reporta_a", "object_entity": "Roberto Vidal", "evidence_text": "Juan Garcia reporta a Roberto Vidal como director de tecnología"},
+    {"subject_entity": "Andres Martin", "predicate": "reporta_a", "object_entity": "Juan Garcia", "evidence_text": "Andres Martin reporta a Juan Garcia como su team lead directo"},
+    {"subject_entity": "Pedro Sanchez", "predicate": "reporta_a", "object_entity": "Juan Garcia", "evidence_text": "Pedro Sanchez reporta a Juan Garcia en la estructura del equipo"},
+    {"subject_entity": "Maria Lopez", "predicate": "coordina_con", "object_entity": "Juan Garcia", "evidence_text": "Maria Lopez coordina con Juan Garcia en temas de datos y arquitectura"},
+    {"subject_entity": "Ana Torres", "predicate": "coordina_con", "object_entity": "Juan Garcia", "evidence_text": "Ana Torres coordina con Juan Garcia para integraciones API-ETL"},
+    {"subject_entity": "Carlos Ruiz", "predicate": "reporta_a", "object_entity": "Roberto Vidal", "evidence_text": "Carlos Ruiz reporta a Roberto Vidal en la estructura comercial"},
+    {"subject_entity": "Elena Ros", "predicate": "decide_en", "object_entity": "Banco Norte", "evidence_text": "Organigrama muestra a Carlos Ruiz como account manager pero Elena Ros tiene poder de decisión"},
+    {"subject_entity": "Luis Fernandez", "predicate": "reporta_a", "object_entity": "Ana Torres", "evidence_text": "Luis Fernandez reporta a Ana Torres en la estructura de infraestructura"}
   ]},
   "wiki_etl": {"claims": [
-    {"subject_entity": "ETL Pipeline", "predicate": "capacidad", "object_value": "100000 transactions/day", "evidence_text": "El ETL está diseñado para manejar hasta 100.000 transacciones por día"}
+    {"subject_entity": "Juan Garcia", "predicate": "gestiona", "object_entity": "ETL Pipeline", "evidence_text": "Juan Garcia es el responsable principal del ETL Pipeline"},
+    {"subject_entity": "Andres Martin", "predicate": "mantiene", "object_entity": "ETL Pipeline", "evidence_text": "Andres Martin mantiene el ETL Pipeline en operación diaria"},
+    {"subject_entity": "ETL Pipeline", "predicate": "alimenta", "object_entity": "Dashboard Financiero", "evidence_text": "El ETL Pipeline alimenta el Dashboard Financiero con datos procesados cada hora"},
+    {"subject_entity": "ETL Pipeline", "predicate": "alimenta", "object_entity": "Data Warehouse", "evidence_text": "El ETL Pipeline carga datos transformados en el Data Warehouse"},
+    {"subject_entity": "Sistema Facturacion", "predicate": "integra_con", "object_entity": "ETL Pipeline", "evidence_text": "El Sistema de Facturación envía datos al ETL Pipeline para consolidación"},
+    {"subject_entity": "Monitoring Stack", "predicate": "monitoriza", "object_entity": "ETL Pipeline", "evidence_text": "El Monitoring Stack supervisa la salud y rendimiento del ETL Pipeline"},
+    {"subject_entity": "ETL Pipeline", "predicate": "depende_de", "object_entity": "Data Warehouse", "evidence_text": "El ETL Pipeline depende del Data Warehouse como destino de carga"},
+    {"subject_entity": "ETL Pipeline", "predicate": "capacidad", "object_value": "100000 transactions/day", "evidence_text": "El ETL está diseñado para manejar hasta 100.000 transacciones por día"},
+    {"subject_entity": "Juan Garcia", "predicate": "documenta", "object_entity": "Runbook ETL", "evidence_text": "Juan Garcia es autor del Runbook ETL, la guía operativa principal del pipeline"},
+    {"subject_entity": "Andres Martin", "predicate": "conoce_workaround", "object_entity": "ETL Pipeline", "evidence_text": "Andres Martin conoce workarounds no documentados para fallos recurrentes del ETL"}
   ]},
   "correo_renovacion": {"claims": [
-    {"subject_entity": "Banco Norte", "predicate": "riesgo_activo", "object_value": "contract renewal pending", "evidence_text": "La renovación del contrato con Banco Norte está en fase de negociación"}
+    {"subject_entity": "Juan Garcia", "predicate": "negocia_con", "object_entity": "Banco Norte", "evidence_text": "Juan Garcia lidera las negociaciones de renovación con Banco Norte"},
+    {"subject_entity": "Roberto Vidal", "predicate": "aprobador_de", "object_entity": "Cloud Migration", "evidence_text": "Roberto Vidal debe aprobar el presupuesto de la migración cloud"},
+    {"subject_entity": "RetailCo", "predicate": "exige", "object_entity": "API Gateway", "evidence_text": "RetailCo requiere integración vía API Gateway para sus sistemas de inventario"},
+    {"subject_entity": "RetailCo", "predicate": "contacto_clave", "object_entity": "Roberto Vidal", "evidence_text": "Roberto Vidal es el contacto de referencia en el cliente RetailCo"},
+    {"subject_entity": "Nova Consulting", "predicate": "proveedor_de", "object_entity": "Compliance Audit", "evidence_text": "Nova Consulting contratada como auditora externa para el Compliance Audit"},
+    {"subject_entity": "Juan Garcia", "predicate": "participa_en", "object_entity": "Cloud Migration", "evidence_text": "Juan Garcia participa en la migración cloud coordinando la parte de datos"}
   ]},
   "informe_p1": {"claims": [
-    {"subject_entity": "CloudBase", "predicate": "sla_hours", "object_value": "2 hours", "evidence_text": "CloudBase respondió al incidente en 2 horas por acuerdo verbal con Juan Garcia"}
+    {"subject_entity": "Pedro Sanchez", "predicate": "monitoriza", "object_entity": "Monitoring Stack", "evidence_text": "Pedro Sanchez opera y configura el Monitoring Stack para alertas de producción"},
+    {"subject_entity": "Pedro Sanchez", "predicate": "opera", "object_entity": "CI/CD Pipeline", "evidence_text": "Pedro Sanchez gestiona el CI/CD Pipeline incluyendo despliegues a producción"},
+    {"subject_entity": "CI/CD Pipeline", "predicate": "despliega", "object_entity": "API Gateway", "evidence_text": "El CI/CD Pipeline despliega automáticamente las actualizaciones del API Gateway"},
+    {"subject_entity": "Monitoring Stack", "predicate": "monitoriza", "object_entity": "API Gateway", "evidence_text": "El Monitoring Stack incluye dashboards de latencia y errores del API Gateway"},
+    {"subject_entity": "Juan Garcia", "predicate": "escala_a", "object_entity": "Sergio Blanco", "evidence_text": "Ante incidencias P1 con CloudBase, Juan Garcia escala directamente a Sergio Blanco"},
+    {"subject_entity": "Juan Garcia", "predicate": "procedimiento_no_documentado", "object_entity": "Incident Response", "evidence_text": "Juan Garcia tiene procedimientos no documentados para resolución rápida de incidencias"},
+    {"subject_entity": "Andres Martin", "predicate": "escala_a", "object_entity": "Juan Garcia", "evidence_text": "Andres Martin escala incidencias del ETL a Juan Garcia como primera línea"},
+    {"subject_entity": "Dashboard Financiero", "predicate": "consume_datos_de", "object_entity": "Data Warehouse", "evidence_text": "El Dashboard Financiero consulta datos del Data Warehouse para visualizaciones"}
   ]},
   "plan_retailco": {"claims": [
-    {"subject_entity": "RetailCo", "predicate": "contacto_clave", "object_value": "Roberto Vidal", "evidence_text": "Roberto Vidal (Director de Tecnología) como contacto externo del cliente"}
+    {"subject_entity": "Ana Torres", "predicate": "diseña", "object_entity": "API Gateway", "evidence_text": "Ana Torres diseña la arquitectura del API Gateway incluyendo autenticación y rate limiting"},
+    {"subject_entity": "Ana Torres", "predicate": "lidera", "object_entity": "API Modernization", "evidence_text": "Ana Torres lidera el proyecto de modernización del API Gateway"},
+    {"subject_entity": "API Gateway", "predicate": "integra_con", "object_entity": "Sistema Facturacion", "evidence_text": "El API Gateway expone los servicios del Sistema de Facturación a clientes externos"},
+    {"subject_entity": "Luis Fernandez", "predicate": "gestiona", "object_entity": "Cloud Migration", "evidence_text": "Luis Fernandez gestiona la migración cloud de la infraestructura on-premise"},
+    {"subject_entity": "Luis Fernandez", "predicate": "despliega", "object_entity": "Data Warehouse", "evidence_text": "Luis Fernandez despliega y mantiene la infraestructura del Data Warehouse en cloud"},
+    {"subject_entity": "Ana Torres", "predicate": "documenta", "object_entity": "Documentacion API", "evidence_text": "Ana Torres mantiene la Documentación API actualizada con cada release"},
+    {"subject_entity": "Pedro Sanchez", "predicate": "documenta", "object_entity": "Playbook Incidencias", "evidence_text": "Pedro Sanchez mantiene el Playbook de Incidencias con procedimientos de respuesta"},
+    {"subject_entity": "Maria Lopez", "predicate": "documenta", "object_entity": "Wiki Arquitectura", "evidence_text": "Maria Lopez mantiene la Wiki de Arquitectura con decisiones técnicas del equipo"},
+    {"subject_entity": "Juan Garcia", "predicate": "ensena_a", "object_entity": "Pedro Sanchez", "evidence_text": "Juan Garcia ha formado a Pedro Sanchez en procedimientos de escalado y respuesta"},
+    {"subject_entity": "Maria Lopez", "predicate": "diseña", "object_entity": "Data Warehouse", "evidence_text": "Maria Lopez diseñó la arquitectura del Data Warehouse actual"},
+    {"subject_entity": "Juan Garcia", "predicate": "unico_conocedor_de", "object_entity": "Data Reconciliation", "evidence_text": "Juan Garcia es el único que conoce el proceso completo de reconciliación de datos mensual"}
   ]}
 }

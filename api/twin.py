@@ -104,6 +104,7 @@ async def _semantic_search(conn, query_text: str, project_id: int,
         FROM claims c
         WHERE c.project_id = $2
           AND c.embedding IS NOT NULL
+          AND c.corroboration_level IN ('single_source','corroborated','corroborated_by_employee','validated')
           AND ({vis_sql})
         ORDER BY c.embedding <=> $1::vector
         LIMIT {limit}
@@ -210,7 +211,13 @@ async def _compute_claim_breakdown(conn, claim: dict) -> Optional[DocStrengthBre
         claim["project_id"], claim["subject_entity"],
         claim["predicate"], claim.get("object_value"),
     )
-    freshness_score = 1.0
+    from datetime import datetime, timezone
+    source_date = claim.get("source_date") or claim.get("created_at")
+    if source_date:
+        days_old = (datetime.now(timezone.utc) - source_date).days
+        freshness_score = max(0.1, min(1.0, 1.0 - days_old / 365.0))
+    else:
+        freshness_score = 1.0
     trust_tier = claim.get("trust_tier") or 0
     return DocStrengthBreakdown(
         source_count=source_count,
@@ -349,6 +356,7 @@ async def twin_query(
 
         actor_id = int(actor["sub"])
 
+        _MIN_RELEVANCE = 0.3
         semantic_results = await _semantic_search(
             conn, body.question, body.project_id, role, actor_id
         )
@@ -378,6 +386,11 @@ async def twin_query(
             c for c in semantic_results
             if c["dispute_state"] != "resolved_against"
         ]
+
+        if all_claims:
+            max_sim = max(c.get("similarity", 0) for c in all_claims)
+            if max_sim < _MIN_RELEVANCE:
+                all_claims = []
 
         sources = [
             TwinSource(

@@ -1,16 +1,28 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { post, get } from '../lib/api';
 
+export interface DocStrengthBreakdown {
+  source_count: number;
+  freshness_score: number;
+  trust_tier: number;
+  computed_strength: number;
+}
+
 export interface TwinSource {
   claim_id: string;
   subject_entity: string;
   predicate: string;
+  object_entity?: string | null;
+  object_value?: string | null;
   evidence_text: string;
+  source_type?: string;
   sensitivity: string;
   corroboration_level: string;
   dispute_state: string;
   criticality: number;
   score: number;
+  doc_strength_breakdown?: DocStrengthBreakdown | null;
+  why_resolved?: string | null;
 }
 
 export interface DisputeGroup {
@@ -45,6 +57,16 @@ export function useTwinQuery() {
     mutationFn: async ({ question, project_id }: { question: string; project_id: number }) => {
       return post<TwinResponse>('/twin/query', { question, project_id });
     },
+  });
+}
+
+// Search as a cached query (Explorer). POST /twin/query, enabled only with a
+// non-empty question — the caller debounces the input.
+export function useTwinSearch(question: string, projectId: number) {
+  return useQuery<TwinResponse>({
+    queryKey: ['twin-search', projectId, question],
+    queryFn: () => post<TwinResponse>('/twin/query', { question, project_id: projectId }),
+    enabled: projectId > 0 && question.trim().length > 0,
   });
 }
 

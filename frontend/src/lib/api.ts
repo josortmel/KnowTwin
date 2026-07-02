@@ -1,23 +1,21 @@
-import { getApiKey } from "./auth";
+// All API traffic goes through the main-process bridge (window.knowtwin.fetch),
+// which owns the API key and attaches the Bearer header. The renderer never sees
+// the key and never fetches the network directly (DESIGN.md §4). The public
+// get/post/put/del contract is unchanged so callers/hooks are unaffected.
 
-const BASE_URL = "http://localhost:8090";
+function bridge() {
+  const b = window.knowtwin;
+  if (!b) throw new Error("knowtwin bridge unavailable — run inside the Electron app");
+  return b;
+}
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const key = getApiKey();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(init?.headers as Record<string, string>),
-  };
-  if (key) {
-    headers["Authorization"] = `Bearer ${key}`;
-  }
-
-  const res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
+async function request<T>(path: string, opts?: { method?: string; body?: unknown }): Promise<T> {
+  const res = await bridge().fetch<T>(path, opts);
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
+    const detail = typeof res.data === "string" ? res.data : res.data != null ? JSON.stringify(res.data) : "";
+    throw new Error(`${res.status}: ${res.error ?? detail}`);
   }
-  return res.json();
+  return res.data as T;
 }
 
 export function get<T>(path: string): Promise<T> {
@@ -25,11 +23,11 @@ export function get<T>(path: string): Promise<T> {
 }
 
 export function post<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
+  return request<T>(path, { method: "POST", body });
 }
 
 export function put<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined });
+  return request<T>(path, { method: "PUT", body });
 }
 
 export function del<T>(path: string): Promise<T> {

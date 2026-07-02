@@ -6,10 +6,18 @@ interface Provider {
   has_key: boolean;
 }
 
+interface Page<T> {
+  items: T[];
+}
+
 export function useProviders() {
   return useQuery<Provider[]>({
     queryKey: ["providers"],
-    queryFn: () => get("/api/v1/providers"),
+    // GET /api/v1/providers returns a paginated {items,total}, not an array.
+    queryFn: async () => {
+      const r = await get<Provider[] | Page<Provider>>("/api/v1/providers");
+      return Array.isArray(r) ? r : r.items ?? [];
+    },
   });
 }
 

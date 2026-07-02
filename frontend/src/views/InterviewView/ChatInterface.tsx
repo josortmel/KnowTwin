@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { SafeText } from "../../components/SafeText";
+import { Button } from "../../components/Button";
 import { VoiceRecorder } from "./VoiceRecorder";
 
 interface Message {
@@ -49,14 +50,17 @@ export function ChatInterface({ sessionId: _sid, onSendText, onSendVoice, messag
       <div className="flex-1 overflow-y-auto space-y-3 p-4">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-              m.role === "user"
-                ? "bg-blue-500 text-white"
-                : "bg-gray-100 text-gray-800"
-            }`}>
-              <SafeText text={m.text} as="p" />
+            <div
+              className="max-w-[80%] rounded-lg px-3 py-2 text-[13px] text-ink-1"
+              style={
+                m.role === "user"
+                  ? { background: "color-mix(in srgb, var(--accent) 14%, transparent)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)" }
+                  : { background: "var(--inset)", boxShadow: "inset 0 0 0 1px var(--card-hairline)" }
+              }
+            >
+              <SafeText text={m.text} as="p" className="font-body leading-relaxed" />
               {m.role === "system" && m.claimsCreated != null && (
-                <div className="text-xs mt-1 opacity-70">
+                <div className="mt-1 font-mono text-[10px] tabular-nums text-ink-3">
                   {m.claimsCreated} claims · value {m.turnValue?.toFixed(2)}
                 </div>
               )}
@@ -65,30 +69,27 @@ export function ChatInterface({ sessionId: _sid, onSendText, onSendVoice, messag
         ))}
         {sending && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 animate-pulse">
-              Processing...
+            <div className="animate-pulse rounded-lg px-3 py-2 font-mono text-[12px] text-ink-3 motion-reduce:animate-none" style={{ background: "var(--inset)" }}>
+              Processing…
             </div>
           </div>
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t p-3 flex gap-2">
+      <form onSubmit={handleSubmit} className="flex gap-2 border-t p-3" style={{ borderColor: "var(--card-hairline)" }}>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={disabled || sending}
-          placeholder="Type your response..."
-          className="flex-1 px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50"
+          placeholder="Type your response…"
+          className="min-w-0 flex-1 rounded-md px-3 py-2 font-body text-[13.5px] text-ink-1 outline-none placeholder:text-ink-3 disabled:opacity-50"
+          style={{ background: "var(--field-bg)", boxShadow: "inset 0 1px 3px var(--inset), inset 0 0 0 1px var(--card-hairline)" }}
         />
         <VoiceRecorder onRecorded={handleVoice} disabled={disabled || sending} />
-        <button
-          type="submit"
-          disabled={disabled || sending || !input.trim()}
-          className="px-4 py-2 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={disabled || sending || !input.trim()}>
           Send
-        </button>
+        </Button>
       </form>
     </div>
   );

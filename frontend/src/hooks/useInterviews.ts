@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { get, post } from "../lib/api";
-import { getApiKey } from "../lib/auth";
 
 interface Session {
   id: string;
@@ -59,16 +58,18 @@ export function useRespond(sessionId: string) {
 export function useUploadVoice(sessionId: string) {
   return useMutation({
     mutationFn: async (file: File) => {
-      const key = getApiKey();
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`http://localhost:8090/interviews/${sessionId}/voice`, {
-        method: "POST",
-        headers: key ? { Authorization: `Bearer ${key}` } : {},
-        body: fd,
+      const bridge = window.knowtwin;
+      if (!bridge) throw new Error("knowtwin bridge unavailable — run inside the Electron app");
+      // Defense-in-depth (VS4): reject oversize files before crossing IPC.
+      if (file.size > 100 * 1024 * 1024) throw new Error("File too large (max 100MB)");
+      const bytes = await file.arrayBuffer();
+      const res = await bridge.uploadVoice({
+        session_id: sessionId,
+        filename: file.name || "voice.webm",
+        bytes,
       });
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-      return res.json() as Promise<RespondResult>;
+      if (!res.ok) throw new Error(res.error ?? `voice upload failed (${res.status ?? 0})`);
+      return res.data as RespondResult;
     },
   });
 }

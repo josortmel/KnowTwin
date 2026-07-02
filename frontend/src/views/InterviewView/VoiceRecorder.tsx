@@ -55,11 +55,14 @@ export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
       type="button"
       disabled={disabled}
       onClick={recording ? stop : start}
-      className={`px-3 py-2 rounded text-sm font-medium ${
+      className={`rounded-md px-3 py-2 font-body text-[13px] font-medium text-ink-1 disabled:opacity-50 ${
+        recording ? "animate-pulse motion-reduce:animate-none" : ""
+      }`}
+      style={
         recording
-          ? "bg-red-500 text-white animate-pulse"
-          : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-      } disabled:opacity-50`}
+          ? { background: "color-mix(in srgb, var(--red) 16%, transparent)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--red) 34%, transparent)" }
+          : { background: "var(--inset)", boxShadow: "inset 0 0 0 1px var(--card-hairline)" }
+      }
     >
       {recording ? "Stop" : "Voice"}
     </button>

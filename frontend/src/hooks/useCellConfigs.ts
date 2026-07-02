@@ -11,10 +11,18 @@ interface CellConfig {
   enabled: boolean;
 }
 
+interface Page<T> {
+  items: T[];
+}
+
 export function useCellConfigs() {
   return useQuery<CellConfig[]>({
     queryKey: ["cellConfigs"],
-    queryFn: () => get("/api/v1/cells/configs"),
+    // GET /api/v1/cells/configs returns a paginated {items,total}, not an array.
+    queryFn: async () => {
+      const r = await get<CellConfig[] | Page<CellConfig>>("/api/v1/cells/configs");
+      return Array.isArray(r) ? r : r.items ?? [];
+    },
   });
 }
 

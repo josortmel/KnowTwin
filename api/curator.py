@@ -221,6 +221,25 @@ async def _extract_claims_from_chunk(conn, chunk: dict, project_id: int, user_id
                 tags,
             )
             claim_ids.append(cid)
+
+            from graph import _ensure_node
+            await _ensure_node(conn, cd["subject_entity"][:500])
+            obj_name = cd.get("object_entity") or cd.get("object_value")
+            if obj_name:
+                await _ensure_node(conn, obj_name[:500])
+
+            if chunk.get("chunk_id"):
+                doc_id = await conn.fetchval(
+                    "SELECT document_id FROM document_chunks WHERE id = $1",
+                    str(chunk["chunk_id"]),
+                )
+                if doc_id:
+                    await conn.execute(
+                        "INSERT INTO claim_document_links (claim_id, document_id) "
+                        "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                        cid, doc_id,
+                    )
+
             await conn.execute(
                 "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
                 "VALUES ($1, 'curator_extract', 'claim', $2, $3::jsonb)",
@@ -238,7 +257,8 @@ async def _promote_claim(conn, claim_id) -> bool:
     try:
         from embeddings_client import embed_text
         row = await conn.fetchrow(
-            "SELECT evidence_text, corroboration_level FROM claims WHERE id = $1", claim_id
+            "SELECT evidence_text, corroboration_level, subject_entity, predicate, "
+            "object_entity, object_value FROM claims WHERE id = $1", claim_id
         )
         if not row or row["corroboration_level"] != "draft":
             return False
@@ -254,6 +274,30 @@ async def _promote_claim(conn, claim_id) -> bool:
                 "embedding = $1::vector, updated_at = now() WHERE id = $2",
                 str(vec), claim_id,
             )
+
+            from graph import _ensure_node, _create_age_edge
+            subj_id = await _ensure_node(conn, row["subject_entity"])
+            await conn.execute(
+                "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                claim_id, subj_id,
+            )
+            obj_name = row.get("object_entity") or row.get("object_value")
+            if obj_name:
+                obj_id = await _ensure_node(conn, obj_name)
+                await conn.execute(
+                    "INSERT INTO claim_entity_links (claim_id, entity_node_id) "
+                    "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    claim_id, obj_id,
+                )
+                t_row = await conn.fetchrow(
+                    "INSERT INTO triples (subject_id, predicate, object_id, claim_id) "
+                    "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+                    subj_id, row["predicate"], obj_id, claim_id,
+                )
+                if t_row is not None:
+                    await _create_age_edge(conn, subj_id, row["predicate"], obj_id)
+
             await conn.execute(
                 "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
                 "VALUES (NULL, 'curator_promote', 'claim', $1, $2::jsonb)",
@@ -422,6 +466,27 @@ async def _write_verified_document(conn, project_id: int,
     """, project_id, content_md, gap_count, len(contradictions))
 
     return doc_id
+
+
+@router.get("/{project_id}/verified-documents")
+async def list_verified_documents(
+    project_id: int,
+    actor: dict = Depends(get_current_user),
+) -> list[dict]:
+    """List verified documents for a project. Curator/admin only."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await check_access(conn, actor, project_id, "curator")
+        rows = await conn.fetch(
+            "SELECT id, project_id, domain_area, content_md, version, status, "
+            "gap_count, contradiction_count, created_at "
+            "FROM verified_documents WHERE project_id = $1 ORDER BY created_at DESC",
+            project_id,
+        )
+    return [
+        {**dict(r), "id": str(r["id"]), "created_at": r["created_at"].isoformat()}
+        for r in rows
+    ]
 
 
 @router.post("/{project_id}/curator/run")

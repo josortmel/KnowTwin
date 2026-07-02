@@ -1,6 +1,6 @@
 """KnowTwin — Seed predicate vocabulary.
 
-Inserts 10 offboarding-specific + 10 reused core predicates into predicates_canonical.
+Inserts 10 offboarding + 10 core + 25 domain predicates (45 total) into predicates_canonical.
 Optionally embeds each via Jina v4 (skips gracefully if tei is down).
 
 Usage:
@@ -84,6 +84,66 @@ PREDICATES = [
     ("miembro_de", "composicion", "core", None,
      "formal membership",
      False, None, False, ["persona"], ["organizacion", "proyecto"], []),
+
+    # === OPERACIONES (7) ===
+    ("gestiona", "operaciones", "domain", None, "manages a process, system, or resource",
+     False, None, False, [], [], []),
+    ("mantiene", "operaciones", "domain", None, "maintains a system or process",
+     False, None, False, [], [], []),
+    ("monitoriza", "operaciones", "domain", None, "monitors a system or metric",
+     False, None, False, [], [], []),
+    ("opera", "operaciones", "domain", None, "operates a system or infrastructure",
+     False, None, False, [], [], []),
+    ("escala_a", "operaciones", "domain", None, "escalation path to person or team",
+     False, None, False, [], [], []),
+    ("domina", "operaciones", "domain", None, "has deep expertise in a topic",
+     False, None, False, [], [], []),
+    ("capacidad", "operaciones", "domain", None, "capacity or throughput of a system",
+     False, None, False, [], [], []),
+
+    # === RELACIONES (5) ===
+    ("coordina_con", "relaciones", "domain", None, "coordinates with person or team",
+     False, None, False, [], [], []),
+    ("negocia_con", "relaciones", "domain", None, "negotiates with external party",
+     False, None, False, [], [], []),
+    ("reporta_a", "relaciones", "domain", None, "reports to person in hierarchy",
+     False, None, False, [], [], []),
+    ("sustituye_a", "relaciones", "domain", None, "substitutes for a person",
+     False, None, False, [], [], []),
+    ("contacto_clave", "relaciones", "domain", None, "key contact for a vendor or partner",
+     False, None, False, [], [], []),
+
+    # === DOCUMENTACION (3) ===
+    ("documenta", "documentacion", "domain", None, "documents a process or decision",
+     False, None, False, [], [], []),
+    ("certifica", "documentacion", "domain", None, "certifies or validates formally",
+     False, None, False, [], [], []),
+    ("audita", "documentacion", "domain", None, "audits a system or process",
+     False, None, False, [], [], []),
+
+    # === TECNICO (5) ===
+    ("implementa", "tecnico", "domain", None, "implements a system or feature",
+     False, None, False, [], [], []),
+    ("diseña", "tecnico", "domain", None, "designs architecture or solution",
+     False, None, False, [], [], []),
+    ("migra", "tecnico", "domain", None, "migrates data or systems",
+     False, None, False, [], [], []),
+    ("despliega", "tecnico", "domain", None, "deploys to production",
+     False, None, False, [], [], []),
+    ("decide_en", "tecnico", "domain", None, "technical decision authority in area",
+     False, None, False, [], [], []),
+
+    # === CONTRATOS/SLA (5) ===
+    ("sla_hours", "contratos", "domain", None, "SLA response time commitment",
+     False, None, False, [], [], []),
+    ("riesgo_activo", "contratos", "domain", None, "active risk in contract or operation",
+     False, None, False, [], [], []),
+    ("acuerdo_informal", "contratos", "domain", None, "informal/verbal agreement",
+     False, None, False, [], [], []),
+    ("responsable_real", "contratos", "domain", None, "de facto responsible (vs formal)",
+     False, None, False, [], [], []),
+    ("workaround_conocido", "contratos", "domain", None, "known workaround for a limitation",
+     False, None, False, [], [], []),
 ]
 
 
