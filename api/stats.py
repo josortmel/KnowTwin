@@ -57,10 +57,10 @@ async def stats_memories(
         if workspace_id is not None:
             params.append(workspace_id)
             ws_idx = len(params)
-            project_filter += f" AND m.workspace_id = ${ws_idx}"
+            project_filter += f" AND m.project_id IN (SELECT p2.id FROM projects p2 WHERE p2.workspace_id = ${ws_idx})"
 
         if group_by == "type":
-            label_expr = "m.type::text"
+            label_expr = "m.source_type::text"
             join_clause = ""
         elif group_by == "project":
             label_expr = "p.name"
@@ -71,7 +71,7 @@ async def stats_memories(
 
         sql = f"""
             SELECT {label_expr} AS label, COUNT(*) AS count
-            FROM memories m
+            FROM claims m
             {join_clause}
             WHERE m.created_at >= NOW() - make_interval(days => $1)
             {project_filter}
@@ -160,20 +160,20 @@ async def stats_agents(
         ws_clause = ""
         if workspace_id is not None:
             params.append(workspace_id)
-            ws_clause = f"AND m.workspace_id = ${len(params)}"
+            ws_clause = f"AND m.project_id IN (SELECT p2.id FROM projects p2 WHERE p2.workspace_id = ${len(params)})"
 
         rows = await conn.fetch(f"""
             SELECT a.identifier,
-                   COUNT(m.id) AS memories_created,
+                   COUNT(m.id) AS claims_created,
                    MAX(a.last_seen) AS last_activity
             FROM agents a
-            LEFT JOIN memories m ON m.agent_id = a.id
+            LEFT JOIN claims m ON m.agent_id = a.id
                 AND m.created_at >= NOW() - make_interval(days => $1)
                 {project_filter}
                 {ws_clause}
             GROUP BY a.id, a.identifier, a.last_seen
             {having_clause}
-            ORDER BY memories_created DESC
+            ORDER BY claims_created DESC
         """, *params)
 
         # searches from search_log — filter by visible project_ids
@@ -199,7 +199,7 @@ async def stats_agents(
     agents = [
         {
             "identifier": r["identifier"],
-            "memories_created": r["memories_created"],
+            "claims_created": r["claims_created"],
             "searches": search_map.get(r["identifier"], 0),
             "last_activity": r["last_activity"].isoformat() if r["last_activity"] else None,
         }
@@ -271,12 +271,11 @@ async def stats_system(actor: dict = Depends(get_current_user)) -> dict:
 
     # DB counts
     async with pool.acquire() as conn:
-        memories_count = await conn.fetchval("SELECT COUNT(*) FROM memories")
+        claims_count = await conn.fetchval("SELECT COUNT(*) FROM claims")
         nodes_count = await conn.fetchval("SELECT COUNT(*) FROM nodes")
         triples_count = await conn.fetchval("SELECT COUNT(*) FROM triples")
-        # Media: count non-null media_path entries in memories
         media_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM memories WHERE media_path IS NOT NULL"
+            "SELECT COUNT(*) FROM claims WHERE sanitized_text IS NOT NULL"
         )
 
     # Embeddings health
@@ -300,13 +299,13 @@ async def stats_system(actor: dict = Depends(get_current_user)) -> dict:
     return {
         "embeddings": embeddings_info,
         "db": {
-            "memories_count": memories_count,
+            "claims_count": claims_count,
             "nodes_count": nodes_count,
             "triples_count": triples_count,
         },
         "media": {
             "files_count": media_count,
-            "note": "count of memories with media_path (filesystem scan not available in container)",
+            "note": "count of claims with sanitized_text",
         },
     }
 
@@ -350,9 +349,9 @@ async def stats_timeline(
             ),
             mem AS (
                 SELECT DATE(created_at) AS day, COUNT(*) AS cnt
-                FROM memories
+                FROM claims
                 WHERE created_at >= now() - interval '1 day' * $1
-                AND staleness != 'archived'
+                AND corroboration_level != 'rejected'
                 {mem_filter}
                 GROUP BY DATE(created_at)
             ),
@@ -373,7 +372,7 @@ async def stats_timeline(
             )
             SELECT
                 gs.day,
-                COALESCE(mem.cnt, 0) AS memories,
+                COALESCE(mem.cnt, 0) AS claims,
                 COALESCE(docs.cnt, 0) AS documents,
                 COALESCE(searches.cnt, 0) AS searches
             FROM gs
@@ -386,7 +385,7 @@ async def stats_timeline(
     timeline = [
         {
             "date": str(r["day"]),
-            "memories": r["memories"],
+            "claims": r["claims"],
             "documents": r["documents"],
             "searches": r["searches"],
         }
@@ -425,30 +424,27 @@ async def knowledge_stats(
         data["orphan_entity_count"] = await conn.fetchval(
             """SELECT count(*) FROM nodes n
                WHERE status = 'active'
-                 AND NOT EXISTS (SELECT 1 FROM memory_entity_links mel WHERE mel.entity_node_id = n.id)
+                 AND NOT EXISTS (SELECT 1 FROM claim_entity_links cel WHERE cel.entity_node_id = n.id)
                  AND NOT EXISTS (SELECT 1 FROM document_entity_links del WHERE del.entity_node_id = n.id)"""
         )
         if project_id is None:
-            data["stale_memory_count"] = await conn.fetchval(
-                "SELECT count(*) FROM memories WHERE staleness = 'stale'"
+            data["stale_claim_count"] = await conn.fetchval(
+                "SELECT count(*) FROM claims WHERE freshness_state = 'stale'"
             )
-            data["dormant_memory_count"] = await conn.fetchval(
-                "SELECT count(*) FROM memories WHERE staleness = 'dormant'"
+            data["dormant_claim_count"] = await conn.fetchval(
+                "SELECT count(*) FROM claims WHERE freshness_state = 'dormant'"
             )
             data["duplicate_candidate_count"] = await conn.fetchval(
                 "SELECT count(*) FROM related_documents WHERE confirmed_by IS NULL"
             )
         else:
-            data["stale_memory_count"] = await conn.fetchval(
-                "SELECT count(*) FROM memories WHERE staleness = 'stale' AND project_id = $1",
+            data["stale_claim_count"] = await conn.fetchval(
+                "SELECT count(*) FROM claims WHERE freshness_state = 'stale' AND project_id = $1",
                 project_id,
             )
-            data["dormant_memory_count"] = await conn.fetchval(
-                "SELECT count(*) FROM memories WHERE staleness = 'dormant' AND project_id = $1",
+            data["dormant_claim_count"] = await conn.fetchval(
+                "SELECT count(*) FROM claims WHERE freshness_state = 'dormant' AND project_id = $1",
                 project_id,
-            )
-            data["duplicate_candidate_count"] = await conn.fetchval(
-                "SELECT count(*) FROM related_documents WHERE confirmed_by IS NULL"
             )
         data["graph_density"] = await conn.fetchval(
             """SELECT CASE

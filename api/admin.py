@@ -110,7 +110,7 @@ class RedistributeResponse(BaseModel):
 # Attention Inbox (B2+B3 — dashboard backend)
 # ---------------------------------------------------------------------------
 
-_INBOX_CLASSES = frozenset({"stale_memories", "unconfirmed_relations", "pending_alias_candidates", "low_trust_documents"})
+_INBOX_CLASSES = frozenset({"stale_claims", "unconfirmed_relations", "pending_alias_candidates", "low_trust_documents", "pending_disputes", "pending_deletions"})
 
 
 async def _inbox_query(conn, decision_class: str, actor: dict, limit: int = 0, offset: int = 0, count_only: bool = False):
@@ -127,34 +127,40 @@ async def _inbox_query(conn, decision_class: str, actor: dict, limit: int = 0, o
         org_doc_d = ""
         org_alias_c = ""
         org_alias_d = ""
+        org_del_c = ""
+        org_del_d = ""
     else:
         org_mem_c = f"AND m.project_id IN {_org_sub % '$1'}"
         org_mem_d = f"AND m.project_id IN {_org_sub % '$3'}"
         org_doc_c = f"AND d.project_id IN {_org_sub % '$1'}"
         org_doc_d = f"AND d.project_id IN {_org_sub % '$3'}"
+        org_del_c = f"AND dr.project_id IN {_org_sub % '$1'}"
+        org_del_d = f"AND dr.project_id IN {_org_sub % '$3'}"
         org_alias_c = f"""AND eac.id IN (
             SELECT eac2.id FROM entity_alias_candidates eac2
-            JOIN entity_links el ON el.entity = eac2.source_name
-            JOIN memories mm ON mm.id = el.memory_id
+            JOIN nodes nn ON lower(nn.name) = lower(eac2.source_name)
+            JOIN claim_entity_links cel ON cel.entity_node_id = nn.id
+            JOIN claims mm ON mm.id = cel.claim_id
             JOIN projects pp ON pp.id = mm.project_id
             JOIN workspaces ww ON ww.id = pp.workspace_id
             WHERE ww.organization_id = $1)"""
         org_alias_d = f"""AND eac.id IN (
             SELECT eac2.id FROM entity_alias_candidates eac2
-            JOIN entity_links el ON el.entity = eac2.source_name
-            JOIN memories mm ON mm.id = el.memory_id
+            JOIN nodes nn ON lower(nn.name) = lower(eac2.source_name)
+            JOIN claim_entity_links cel ON cel.entity_node_id = nn.id
+            JOIN claims mm ON mm.id = cel.claim_id
             JOIN projects pp ON pp.id = mm.project_id
             JOIN workspaces ww ON ww.id = pp.workspace_id
             WHERE ww.organization_id = $3)"""
 
     queries = {
-        "stale_memories": {
-            "count": f"SELECT count(*) FROM memories m WHERE m.staleness IN ('stale', 'dormant') {org_mem_c}",
+        "stale_claims": {
+            "count": f"SELECT count(*) FROM claims m WHERE m.freshness_state IN ('stale', 'dormant') {org_mem_c}",
             "detail": f"""
-                SELECT m.id, m.content, m.type::text, m.staleness, m.created_at, m.updated_at,
+                SELECT m.id, m.evidence_text, m.source_type::text, m.freshness_state, m.created_at, m.updated_at,
                        a.identifier AS agent_identifier
-                FROM memories m LEFT JOIN agents a ON a.id = m.agent_id
-                WHERE m.staleness IN ('stale', 'dormant') {org_mem_d}
+                FROM claims m LEFT JOIN agents a ON a.id = m.agent_id
+                WHERE m.freshness_state IN ('stale', 'dormant') {org_mem_d}
                 ORDER BY m.updated_at ASC LIMIT $1 OFFSET $2""",
         },
         "unconfirmed_relations": {
@@ -191,6 +197,25 @@ async def _inbox_query(conn, decision_class: str, actor: dict, limit: int = 0, o
                 WHERE d.trust_tier = 0 AND d.status != 'deleted' {org_doc_d}
                 ORDER BY d.created_at DESC LIMIT $1 OFFSET $2""",
         },
+        "pending_disputes": {
+            "count": f"SELECT count(*) FROM claims m WHERE m.dispute_state = 'disputed' {org_mem_c}",
+            "detail": f"""
+                SELECT m.id, m.evidence_text, m.source_type::text, m.dispute_state, m.created_at, m.updated_at,
+                       a.identifier AS agent_identifier
+                FROM claims m LEFT JOIN agents a ON a.id = m.agent_id
+                WHERE m.dispute_state = 'disputed' {org_mem_d}
+                ORDER BY m.updated_at ASC LIMIT $1 OFFSET $2""",
+        },
+        "pending_deletions": {
+            "count": f"SELECT count(*) FROM deletion_requests dr WHERE dr.status = 'pending' {org_del_c}",
+            "detail": f"""
+                SELECT dr.id, dr.claim_id, dr.reason, dr.status, dr.created_at,
+                       m.evidence_text, m.source_type::text
+                FROM deletion_requests dr
+                JOIN claims m ON m.id = dr.claim_id
+                WHERE dr.status = 'pending' {org_del_d}
+                ORDER BY dr.created_at ASC LIMIT $1 OFFSET $2""",
+        },
     }
 
     q = queries[decision_class]
@@ -222,7 +247,7 @@ async def attention_inbox_summary(
 
 @router.get("/attention-inbox/details")
 async def attention_inbox_details(
-    decision_class: str = Query(..., description="One of: stale_memories, unconfirmed_relations, pending_alias_candidates, low_trust_documents"),
+    decision_class: str = Query(..., description="One of: stale_claims, unconfirmed_relations, pending_alias_candidates, low_trust_documents, pending_disputes, pending_deletions"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     actor: dict = Depends(require_super_or_ceo),
@@ -830,8 +855,9 @@ async def list_alias_candidates(
                        eac.first_seen, eac.last_seen, eac.sample_contexts
                 FROM entity_alias_candidates eac
                 JOIN nodes n ON n.id = eac.target_node_id
-                JOIN entity_links el ON el.entity = eac.source_name
-                JOIN memories m ON m.id = el.memory_id
+                JOIN nodes nn ON lower(nn.name) = lower(eac.source_name)
+                JOIN claim_entity_links cel ON cel.entity_node_id = nn.id
+                JOIN claims m ON m.id = cel.claim_id
                 JOIN projects p ON p.id = m.project_id
                 JOIN workspaces w ON w.id = p.workspace_id
                 WHERE eac.status = $1 AND w.organization_id = $2
