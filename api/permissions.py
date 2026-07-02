@@ -236,10 +236,20 @@ async def check_access(conn, actor: dict, project_id: int, required_role: str) -
     return actual_role
 
 
+def render_evidence(role: str, evidence_text: str, sanitized_text: str = None) -> str:
+    """Three-level evidence render. Consumer sees sanitized if available."""
+    if role in ("admin", "curator", "employee"):
+        return evidence_text
+    if sanitized_text is not None:
+        return sanitized_text
+    return evidence_text
+
+
 async def employee_owns_claim(conn, actor_id: int, claim_id) -> bool:
     """Check if actor is the employee associated with this claim."""
     eid = await conn.fetchval("SELECT employee_id FROM claims WHERE id = $1", claim_id)
     return eid is not None and eid == actor_id
+
 
 
 def _http_403(detail: str):

@@ -315,3 +315,58 @@ def test_null_byte_and_maxlen_rejected(client, keys):
 
     r = _create(client, keys["curator"]["key"], tags=["x" * 201])
     assert r.status_code == 422, "over-max-tag-length must be rejected"
+
+
+# ---------------------------------------------------------------------------
+# TG-P1.4-1: Employee tighten-only sensitivity
+# ---------------------------------------------------------------------------
+
+def test_employee_tighten_only_sensitivity(client, keys):
+    """Employee cannot loosen sensitivity (restricted→public=403). Can tighten (team→restricted=ok)."""
+    eid = keys["employee"]["uid"]
+    _run(_db(
+        """INSERT INTO claims (project_id, subject_entity, predicate, evidence_text,
+           source_type, employee_id, corroboration_level, sensitivity)
+           VALUES (1, 'TightenEntity', 'sabe', 'TC_tighten', 'interview', $1, 'single_source', 'restricted')""",
+        eid,
+    ))
+    cid = _run(_dbval(
+        "SELECT id::text FROM claims WHERE evidence_text = 'TC_tighten'"
+    ))
+
+    # Loosen restricted→public: MUST be 403
+    r = client.put(f"/claims/{cid}", json={"sensitivity": "public"},
+                   headers=_h(keys["employee"]["key"]))
+    assert r.status_code == 403, f"loosen should be 403, got {r.status_code}"
+
+    # Set to team first (curator can do it)
+    _run(_db("UPDATE claims SET sensitivity = 'team' WHERE id = $1::uuid", cid))
+
+    # Tighten team→restricted: MUST be allowed
+    r = client.put(f"/claims/{cid}", json={"sensitivity": "restricted"},
+                   headers=_h(keys["employee"]["key"]))
+    assert r.status_code == 200, f"tighten should be 200, got {r.status_code}"
+    assert r.json()["sensitivity"] == "restricted"
+
+    _run(_db("DELETE FROM claims WHERE evidence_text = 'TC_tighten'"))
+
+
+# ---------------------------------------------------------------------------
+# TG-P1.4-2: PUT /claims/{id} update tags
+# ---------------------------------------------------------------------------
+
+def test_update_claim_tags(client, keys):
+    """PUT update_claim changes tags and audits."""
+    r = _create(client, keys["curator"]["key"], evidence_text="TC_tags_update")
+    cid = r.json()["id"]
+
+    r = client.put(f"/claims/{cid}", json={"tags": ["important", "reviewed"]},
+                   headers=_h(keys["curator"]["key"]))
+    assert r.status_code == 200
+    assert set(r.json()["tags"]) == {"important", "reviewed"}
+
+    audit = _run(_dbval(
+        "SELECT count(*) FROM audit_log WHERE resource = 'claim' AND resource_id = $1 "
+        "AND action = 'update_claim'", cid,
+    ))
+    assert audit >= 1

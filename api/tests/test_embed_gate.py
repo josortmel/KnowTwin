@@ -306,3 +306,27 @@ def test_audit_gate_invariant(client, api_key):
                ('single_source','corroborated','corroborated_by_employee','validated')))
     """)
     assert violators == 0, f"AUDIT FAIL: {violators} claims violate gate invariant"
+
+
+# -- TG1: embed fail-soft — claim stays at prior level, no crash --
+
+def test_tg1_embed_fail_soft(client, api_key):
+    """When embed_text raises, promote fails gracefully — claim unchanged."""
+    claim = _create_claim(client, api_key)
+    cid = claim["id"]
+
+    from unittest.mock import patch, AsyncMock
+    from fastapi import HTTPException
+
+    with patch("claims.embed_text", new_callable=AsyncMock,
+               side_effect=HTTPException(503, "embeddings down")):
+        r = client.put(
+            f"/claims/{cid}/promote",
+            json={"new_level": "single_source"},
+            headers=_auth(api_key),
+        )
+        assert r.status_code == 503
+
+    row = _db_fetch("SELECT corroboration_level, embedding FROM claims WHERE id = $1", UUID(cid))
+    assert row["corroboration_level"] == "draft", "claim should stay at draft after embed failure"
+    assert row["embedding"] is None

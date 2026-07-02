@@ -96,10 +96,23 @@ _DOC_SELECT = """
 """
 
 
+def _sanitize_metrics(metrics: dict) -> dict:
+    """Strip internal paths from error messages in processing_metrics."""
+    if not metrics or not isinstance(metrics, dict):
+        return metrics
+    cleaned = {}
+    for k, v in metrics.items():
+        if isinstance(v, str) and ("/app/" in v or "\\app\\" in v):
+            v = v.split("/app/")[-1].split("\\app\\")[-1]
+        cleaned[k] = v
+    return cleaned
+
+
 def _row_to_response(row) -> DocumentResponse:
     metrics = row["processing_metrics"]
     if isinstance(metrics, str):
         metrics = json.loads(metrics)
+    metrics = _sanitize_metrics(metrics)
     return DocumentResponse(
         id=row["id"],
         uri=row["uri"],

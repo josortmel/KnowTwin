@@ -24,7 +24,13 @@ def _get_whisper_model():
     if _whisper_model is None:
         if WHISPER_MODEL not in _WHISPER_MODEL_ALLOWLIST:
             raise ValueError(f"WHISPER_MODEL '{WHISPER_MODEL}' not in allowlist: {_WHISPER_MODEL_ALLOWLIST}")
-        import whisper
+        try:
+            import whisper
+        except Exception as _imp_err:
+            raise RuntimeError(
+                f"whisper import failed (likely numba conflict): {_imp_err}. "
+                "Try: pip install numba>=0.59 or run with --no-cov"
+            ) from _imp_err
         _whisper_model = whisper.load_model(WHISPER_MODEL, device="cpu")
     return _whisper_model
 
@@ -168,7 +174,9 @@ async def transcribe_audio(file_path: str) -> TranscriptionResult:
                 )
         except asyncio.TimeoutError:
             proc.kill()
-            log.warning("ffprobe timed out for %s. Proceeding without duration check.", file_path)
+            raise RuntimeError(
+                f"ffprobe timed out for {Path(file_path).name} — rejecting audio (fail-closed)"
+            )
     except FileNotFoundError:
         raise RuntimeError("ffprobe not found — cannot validate audio duration. Install ffmpeg.")
     except ValueError:
@@ -178,6 +186,11 @@ async def transcribe_audio(file_path: str) -> TranscriptionResult:
         import whisper  # noqa: F401 — guard only; model loaded via _get_whisper_model
     except ImportError:
         raise RuntimeError("openai-whisper not installed. Add to requirements.txt and rebuild.")
+    except Exception as _imp_err:
+        raise RuntimeError(
+            f"whisper import failed (likely numba conflict): {_imp_err}. "
+            "Try: pip install numba>=0.59 or run with --no-cov"
+        ) from _imp_err
 
     loop = asyncio.get_running_loop()
 

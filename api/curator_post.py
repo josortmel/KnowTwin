@@ -78,7 +78,7 @@ async def run_curator_post(pool: asyncpg.Pool, session_id: str) -> dict:
                 sanitized_text, was_modified = sanitize_evidence(tc["evidence_text"])
                 if was_modified:
                     await conn.execute(
-                        "UPDATE claims SET evidence_text = $1, sensitivity = 'restricted' WHERE id = $2",
+                        "UPDATE claims SET sanitized_text = $1, sensitivity = 'restricted' WHERE id = $2",
                         sanitized_text, tc["id"],
                     )
                     await conn.execute(
@@ -140,9 +140,15 @@ async def run_curator_post(pool: asyncpg.Pool, session_id: str) -> dict:
                                 )
                                 await conn.execute(
                                     "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
-                                    "VALUES (NULL, 'dispute_claim', 'claim', $1, $2::jsonb)",
+                                    "VALUES (NULL, 'curator_post_dispute', 'claim', $1, $2::jsonb)",
                                     str(dc["id"]),
                                     json.dumps({"tacit_claim_id": str(tc["id"]), "doc_strength": float(strength)}),
+                                )
+                                await conn.execute(
+                                    "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
+                                    "VALUES (NULL, 'curator_post_dispute', 'claim', $1, $2::jsonb)",
+                                    str(tc["id"]),
+                                    json.dumps({"doc_claim_id": str(dc["id"]), "doc_strength": float(strength)}),
                                 )
                                 results["disputed"] += 1
                     else:
@@ -165,6 +171,10 @@ async def run_curator_post(pool: asyncpg.Pool, session_id: str) -> dict:
                 "INSERT INTO cell_runs (cell_type, agent_id, model, metrics, status, finished_at) "
                 "VALUES ('curator_post', 1, 'n/a', $1::jsonb, 'completed', now())",
                 json.dumps({"session_id": session_id, **results}),
+            )
+
+            await conn.execute(
+                "SELECT pg_notify('knowtwin_dossier_regen', $1)", session_id
             )
 
         finally:

@@ -110,6 +110,7 @@ class ClaimUpdate(BaseModel):
 
 class PromoteRequest(BaseModel):
     new_level: str
+    force: bool = False
 
 
 class ClaimResponse(BaseModel):
@@ -143,7 +144,9 @@ class ClaimListResponse(BaseModel):
     offset: int
 
 
-def _claim_row_to_response(row) -> dict:
+def _claim_row_to_response(row, role: str = "admin") -> dict:
+    from permissions import render_evidence
+    evidence = render_evidence(role, row["evidence_text"], row.get("sanitized_text"))
     return {
         "id": row["id"],
         "user_id": row["user_id"],
@@ -153,7 +156,7 @@ def _claim_row_to_response(row) -> dict:
         "predicate": row["predicate"],
         "object_entity": row["object_entity"],
         "object_value": row["object_value"],
-        "evidence_text": row["evidence_text"],
+        "evidence_text": evidence,
         "source_type": row["source_type"],
         "corroboration_level": row["corroboration_level"],
         "dispute_state": row["dispute_state"],
@@ -235,6 +238,96 @@ async def create_claim(body: ClaimCreate, actor: dict = Depends(get_current_user
 
 
 # ---------------------------------------------------------------------------
+# GET /claims/export — csv|json with role+sensitivity gating (P2.9)
+# Must be registered before /{claim_id} to avoid path capture.
+# ---------------------------------------------------------------------------
+
+def _csv_safe(val: str) -> str:
+    """Prefix formula-injection-prone cells with single quote."""
+    if not val:
+        return val
+    if val[0] in ("\t", "\r"):
+        return "'" + val
+    stripped = val.lstrip()
+    if stripped and stripped[0] in ("=", "+", "-", "@"):
+        return "'" + val
+    return val
+
+
+@router.get("/export")
+async def export_claims(
+    project_id: int = Query(..., gt=0),
+    format: Literal["csv", "json"] = Query("json"),
+    actor: dict = Depends(get_current_user),
+):
+    from fastapi.responses import Response as RawResponse
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        role = await check_access(conn, actor, project_id, "consumer")
+        actor_id = int(actor["sub"])
+
+        vis_sql, vis_params = _visibility_sql(role, actor_id, 2)
+        params = [project_id, *vis_params]
+
+        rows = await conn.fetch(f"""
+            SELECT id, subject_entity, predicate, object_value, evidence_text,
+                   sanitized_text, source_type, sensitivity, corroboration_level,
+                   dispute_state, freshness_state, criticality, trust_tier,
+                   created_at, updated_at
+            FROM claims c
+            WHERE c.project_id = $1 AND ({vis_sql})
+            ORDER BY c.created_at DESC
+        """, *params)
+
+    from permissions import render_evidence
+
+    if format == "json":
+        items = []
+        for r in rows:
+            d = dict(r)
+            d["id"] = str(d["id"])
+            d["evidence_text"] = render_evidence(role, d["evidence_text"], d.get("sanitized_text"))
+            d.pop("sanitized_text", None)
+            d["created_at"] = d["created_at"].isoformat() if d["created_at"] else None
+            d["updated_at"] = d["updated_at"].isoformat() if d["updated_at"] else None
+            items.append(d)
+        return items
+
+    headers = [
+        "id", "subject_entity", "predicate", "object_value", "evidence_text",
+        "source_type", "sensitivity", "corroboration_level", "dispute_state",
+        "freshness_state", "criticality", "trust_tier", "created_at", "updated_at",
+    ]
+    lines = [",".join(headers)]
+    for r in rows:
+        ev = render_evidence(role, r["evidence_text"], r.get("sanitized_text"))
+        vals = [
+            str(r["id"]),
+            _csv_safe(r["subject_entity"] or ""),
+            _csv_safe(r["predicate"] or ""),
+            _csv_safe(r["object_value"] or ""),
+            _csv_safe(ev.replace('"', '""') if ev else ""),
+            r["source_type"] or "",
+            r["sensitivity"] or "",
+            r["corroboration_level"] or "",
+            r["dispute_state"] or "",
+            r["freshness_state"] or "",
+            str(r["criticality"]),
+            str(r["trust_tier"]),
+            r["created_at"].isoformat() if r["created_at"] else "",
+            r["updated_at"].isoformat() if r["updated_at"] else "",
+        ]
+        lines.append(",".join(f'"{v}"' for v in vals))
+
+    csv_content = "\n".join(lines)
+    return RawResponse(
+        content=csv_content.encode("utf-8"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=claims_export.csv"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /claims/{id} — read single
 # ---------------------------------------------------------------------------
 
@@ -258,7 +351,7 @@ async def get_claim(claim_id: UUID, actor: dict = Depends(get_current_user)):
             if row["employee_id"] != actor_id:
                 raise HTTPException(404, "claim not found")
 
-    return _claim_row_to_response(row)
+    return _claim_row_to_response(row, role)
 
 
 # ---------------------------------------------------------------------------
@@ -323,11 +416,151 @@ async def list_claims(
         )
 
     return {
-        "items": [_claim_row_to_response(r) for r in rows],
+        "items": [_claim_row_to_response(r, role) for r in rows],
         "total": total,
         "limit": limit,
         "offset": offset,
     }
+
+
+# ---------------------------------------------------------------------------
+# PUT /claims/batch — batch approve/reject/set_sensitivity (P2.9)
+# Must be registered before /{claim_id} to avoid path capture.
+# ---------------------------------------------------------------------------
+
+_APPROVE_NEXT = {
+    "draft": "single_source",
+    "single_source": "corroborated",
+    "corroborated": "corroborated_by_employee",
+    "corroborated_by_employee": "validated",
+}
+
+
+class BatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ids: list[UUID] = Field(..., min_length=1, max_length=200)
+    action: Literal["approve", "reject", "set_sensitivity"]
+    value: Optional[str] = None
+
+    @field_validator("ids")
+    @classmethod
+    def _unique_ids(cls, v):
+        if len(set(str(i) for i in v)) != len(v):
+            raise ValueError("duplicate claim IDs not allowed")
+        return v
+
+
+@router.put("/batch")
+async def batch_claims(body: BatchRequest, actor: dict = Depends(get_current_user)):
+    pool = await get_pool()
+    succeeded = []
+    failed = []
+
+    async with pool.acquire() as conn:
+        for cid in body.ids:
+            try:
+                row = await conn.fetchrow(
+                    "SELECT id, project_id, corroboration_level, source_type, "
+                    "embedding, sensitivity FROM claims WHERE id = $1", cid,
+                )
+                if row is None:
+                    failed.append({"id": str(cid), "error": "not_found"})
+                    continue
+
+                await check_access(conn, actor, row["project_id"], "curator")
+                actor_id = int(actor["sub"])
+                cur_level = row["corroboration_level"]
+
+                if body.action == "approve":
+                    next_level = _APPROVE_NEXT.get(cur_level)
+                    if next_level is None:
+                        failed.append({"id": str(cid),
+                                       "error": f"no valid promotion from {cur_level}"})
+                        continue
+                    valid_next = _VALID_TRANSITIONS.get(cur_level, set())
+                    if next_level not in valid_next:
+                        failed.append({"id": str(cid),
+                                       "error": f"transition {cur_level} not allowed"})
+                        continue
+                    if next_level == "validated" and row["source_type"] == "interview":
+                        next_level = "corroborated_by_employee"
+                        if cur_level == "corroborated_by_employee":
+                            failed.append({"id": str(cid),
+                                           "error": "interview_cap_reached"})
+                            continue
+
+                    async with conn.transaction():
+                        if next_level in _EMBED_LEVELS and row["embedding"] is None:
+                            try:
+                                evidence = await conn.fetchval(
+                                    "SELECT evidence_text FROM claims WHERE id = $1", cid)
+                                vec = await embed_text(evidence, "passage")
+                                if vec is None:
+                                    failed.append({"id": str(cid), "error": "embedding_failed"})
+                                    continue
+                                await conn.execute(
+                                    "UPDATE claims SET corroboration_level = $1, "
+                                    "embedding = $2::vector, updated_at = now() WHERE id = $3",
+                                    next_level, str(vec), cid,
+                                )
+                            except HTTPException:
+                                failed.append({"id": str(cid), "error": "embedding_unavailable"})
+                                continue
+                        else:
+                            await conn.execute(
+                                "UPDATE claims SET corroboration_level = $1, updated_at = now() WHERE id = $2",
+                                next_level, cid,
+                            )
+                        await conn.execute(
+                            "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
+                            "VALUES ($1, 'batch_approve', 'claim', $2, $3::jsonb)",
+                            actor_id, str(cid),
+                            json.dumps({"old_level": cur_level, "new_level": next_level}),
+                        )
+                    succeeded.append({"id": str(cid), "new_state": next_level})
+
+                elif body.action == "reject":
+                    if cur_level == "rejected":
+                        failed.append({"id": str(cid), "error": "already_rejected"})
+                        continue
+                    async with conn.transaction():
+                        await conn.execute("DELETE FROM triples WHERE claim_id = $1", cid)
+                        await conn.execute(
+                            "UPDATE claims SET corroboration_level = 'rejected', "
+                            "embedding = NULL, updated_at = now() WHERE id = $1", cid,
+                        )
+                        await conn.execute(
+                            "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
+                            "VALUES ($1, 'batch_reject', 'claim', $2, $3::jsonb)",
+                            actor_id, str(cid),
+                            json.dumps({"old_level": cur_level}),
+                        )
+                    succeeded.append({"id": str(cid), "new_state": "rejected"})
+
+                elif body.action == "set_sensitivity":
+                    if body.value not in ("public", "team", "restricted"):
+                        failed.append({"id": str(cid), "error": "invalid_sensitivity"})
+                        continue
+                    old_sens = row["sensitivity"]
+                    async with conn.transaction():
+                        await conn.execute(
+                            "UPDATE claims SET sensitivity = $1, updated_at = now() WHERE id = $2",
+                            body.value, cid,
+                        )
+                        await conn.execute(
+                            "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
+                            "VALUES ($1, 'batch_set_sensitivity', 'claim', $2, $3::jsonb)",
+                            actor_id, str(cid),
+                            json.dumps({"old": old_sens, "new": body.value}),
+                        )
+                    succeeded.append({"id": str(cid), "new_state": body.value})
+
+            except HTTPException as he:
+                failed.append({"id": str(cid), "error": he.detail})
+            except Exception:
+                failed.append({"id": str(cid), "error": "internal_error"})
+
+    return {"succeeded": succeeded, "failed": failed}
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +615,7 @@ async def update_claim(
             idx += 1
 
         if not sets:
-            return _claim_row_to_response(current)
+            return _claim_row_to_response(current, role)
 
         sets.append("updated_at = now()")
         set_clause = ", ".join(sets)
@@ -409,7 +642,7 @@ async def update_claim(
                 actor_id, str(claim_id), json.dumps(changes),
             )
 
-    return _claim_row_to_response(row)
+    return _claim_row_to_response(row, role)
 
 
 # ---------------------------------------------------------------------------
@@ -472,28 +705,43 @@ async def promote_claim(claim_id: UUID, body: PromoteRequest, actor: dict = Depe
         await check_access(conn, actor, claim_project, "curator")
 
         current = await conn.fetchrow(
-            "SELECT corroboration_level, source_type, embedding FROM claims WHERE id = $1",
+            "SELECT corroboration_level, source_type, embedding, evidence_text FROM claims WHERE id = $1",
             claim_id,
         )
         if not current:
             raise HTTPException(404, "claim not found")
 
+        if current["evidence_text"] in (None, "[ERASED]"):
+            raise HTTPException(409, "cannot promote erased claims")
+
         cur_level = current["corroboration_level"]
 
-        valid_next = _VALID_TRANSITIONS.get(cur_level, set())
-        if new_level not in valid_next:
-            raise HTTPException(
-                409,
-                f"invalid transition: {cur_level} → {new_level}. "
-                f"Allowed: {sorted(valid_next) or '(terminal)'}",
-            )
+        # Force override: curator/admin can jump levels (bypass step-matrix)
+        if body.force:
+            role = await check_access(conn, actor, claim_project, "curator")
+            if role not in ("curator", "admin"):
+                raise HTTPException(403, "force override requires curator or admin role")
+            if new_level == "validated" and current["source_type"] == "interview":
+                raise HTTPException(
+                    409,
+                    "interview-only claims cannot reach 'validated' (CAP constraint). "
+                    "Maximum: corroborated_by_employee.",
+                )
+        else:
+            valid_next = _VALID_TRANSITIONS.get(cur_level, set())
+            if new_level not in valid_next:
+                raise HTTPException(
+                    409,
+                    f"invalid transition: {cur_level} → {new_level}. "
+                    f"Allowed: {sorted(valid_next) or '(terminal)'}",
+                )
 
-        if new_level == "validated" and current["source_type"] == "interview":
-            raise HTTPException(
-                409,
-                "interview-only claims cannot reach 'validated' (CAP constraint). "
-                "Maximum: corroborated_by_employee.",
-            )
+            if new_level == "validated" and current["source_type"] == "interview":
+                raise HTTPException(
+                    409,
+                    "interview-only claims cannot reach 'validated' (CAP constraint). "
+                    "Maximum: corroborated_by_employee.",
+                )
 
         if new_level in _EMBED_LEVELS:
             if current["embedding"] is not None:
@@ -550,11 +798,49 @@ async def promote_claim(claim_id: UUID, body: PromoteRequest, actor: dict = Depe
                 new_level, claim_id,
             )
 
+        audit_action = "curator_override" if body.force else "promote_claim"
         await conn.execute(
             """INSERT INTO audit_log (user_id, action, resource, resource_id, details)
-               VALUES ($1, 'promote_claim', 'claim', $2, $3::jsonb)""",
-            int(actor["sub"]), str(claim_id),
-            json.dumps({"old_level": cur_level, "new_level": new_level}),
+               VALUES ($1, $2, 'claim', $3, $4::jsonb)""",
+            int(actor["sub"]), audit_action, str(claim_id),
+            json.dumps({"old_level": cur_level, "new_level": new_level, "force": body.force}),
         )
 
     return _claim_row_to_response(row)
+
+
+# ---------------------------------------------------------------------------
+# GET /claims/{id}/audit — audit trail timeline (P2.9)
+# ---------------------------------------------------------------------------
+
+@router.get("/{claim_id}/audit")
+async def claim_audit_trail(
+    claim_id: UUID,
+    actor: dict = Depends(get_current_user),
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        claim_project = await conn.fetchval(
+            "SELECT project_id FROM claims WHERE id = $1", claim_id
+        )
+        if claim_project is None:
+            raise HTTPException(404, "claim not found")
+        await check_access(conn, actor, claim_project, "curator")
+
+        rows = await conn.fetch("""
+            SELECT id, user_id, action, details, created_at
+            FROM audit_log
+            WHERE resource = 'claim' AND resource_id = $1
+            ORDER BY created_at ASC
+        """, str(claim_id))
+
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "action": r["action"],
+            "details": r["details"],
+            "timestamp": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]

@@ -38,11 +38,11 @@ COPY --chown=apiuser:apiuser \
     api/admin.py api/agents.py api/auth.py api/background.py api/bootstrap_first_apikey.py \
     api/cell_configs.py api/cell_templates.py api/cell_worker.py api/chunker.py api/claims.py \
     api/classifier.py api/coverage.py api/curator.py api/curator_post.py \
-    api/crypto.py api/db.py api/documents.py api/embeddings_client.py api/entity_normalization.py \
-    api/events.py api/gliner_service.py api/graph.py api/interviewer.py api/interviews.py api/llm_provider.py api/main.py \
+    api/crypto.py api/db.py api/deletion.py api/disputes.py api/documents.py api/dossier.py api/embeddings_client.py api/entity_normalization.py \
+    api/events.py api/gliner_service.py api/graph.py api/interview_style.py api/interviewer.py api/interviews.py api/llm_provider.py api/main.py \
     api/memories.py api/onboarding.py api/org_settings.py api/pagination.py api/parsers.py \
     api/permissions.py api/projects.py api/providers.py api/rate_limit.py api/reranker.py \
-    api/search.py api/settings.py api/shared_models.py api/stats.py api/teams.py \
+    api/scoring.py api/search.py api/settings.py api/shared_models.py api/stats.py api/teams.py \
     api/telemetry.py api/telemetry_api.py api/twin.py api/users.py api/verifier.py api/worker.py api/workspaces.py \
     ./
 

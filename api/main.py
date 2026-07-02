@@ -139,8 +139,25 @@ async def lifespan(app: FastAPI):
             "Curator post-session listener startup failed: %r", _cp_exc
         )
 
+    # Dossier regeneration listener (P2.2): triggered by curator_post pg_notify
+    _dossier_regen_task = None
+    try:
+        from cell_worker import start_dossier_regen_listener
+        _dossier_regen_task = asyncio.create_task(start_dossier_regen_listener(pool))
+        _kt_log.info("Dossier regen listener started on channel knowtwin_dossier_regen")
+    except Exception as _dr_exc:
+        _kt_log.warning(
+            "Dossier regen listener startup failed: %r", _dr_exc
+        )
+
     yield
 
+    if _dossier_regen_task is not None:
+        _dossier_regen_task.cancel()
+        try:
+            await _dossier_regen_task
+        except (asyncio.CancelledError, Exception):
+            pass
     if _curator_post_task is not None:
         _curator_post_task.cancel()
         try:
@@ -201,9 +218,11 @@ def create_app(environment: str = None) -> FastAPI:
 
     from settings import EMBEDDINGS_URL as _EMBEDDINGS_URL_SETTING
     _EMBEDDINGS_HEALTH_URL = _EMBEDDINGS_URL_SETTING + "/health"
+    _embed_fail_logged_at: dict[str, float] = {}
 
     @app.get("/health", tags=["health"], operation_id="health_liveness")
     async def health() -> Response:
+        import time as _time
         embeddings_status = "ok"
         try:
             async with _httpx.AsyncClient(timeout=3.0) as _client:
@@ -211,10 +230,15 @@ def create_app(environment: str = None) -> FastAPI:
                 if _r.status_code != 200:
                     embeddings_status = "degraded"
         except Exception as _e:
-            import logging as _logging
-            _logging.getLogger("knowtwin.health").warning(
-                "embeddings health check failed: %s", type(_e).__name__
-            )
+            now = _time.monotonic()
+            last = _embed_fail_logged_at.get("t", 0)
+            if now - last >= 60:
+                import logging as _logging
+                _logging.getLogger("knowtwin.health").warning(
+                    "embeddings health check failed: %s (suppressing repeats for 60s)",
+                    type(_e).__name__,
+                )
+                _embed_fail_logged_at["t"] = now
             embeddings_status = "degraded"
         llm_status = "off"
         if settings.ECODB_LLM_PROVIDER != "off":
@@ -248,6 +272,14 @@ def create_app(environment: str = None) -> FastAPI:
     # Memories router (EcoDB legacy — dead code, claims table replaces memories).
     import memories
     app.include_router(memories.router)
+
+    # Deletion router (P2.11 — must precede claims for /claims/deletion-requests).
+    import deletion
+    app.include_router(deletion.router)
+
+    # Disputes router (P2.6 — must precede claims to avoid /{claim_id} capture).
+    import disputes
+    app.include_router(disputes.router)
 
     # Claims router (KnowTwin — embed gate).
     import claims
@@ -320,6 +352,10 @@ def create_app(environment: str = None) -> FastAPI:
     # Verifier router (P1.10) — batch QA of curator output.
     import verifier
     app.include_router(verifier.router)
+
+    # Scoring router (P2.1) — employee knowledge-contribution score.
+    import scoring
+    app.include_router(scoring.router)
 
     # Interview router (P1.14) — session CRUD + /respond.
     import interviews

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -20,7 +20,7 @@ _VALID_SENSITIVITIES = frozenset({"public", "team", "restricted"})
 
 
 class SettingsPayload(BaseModel):
-    sanitization_defaults: Optional[dict[str, str]] = None
+    sanitization_defaults: Optional[dict[str, Any]] = None
     retention: Optional[dict] = None
 
 
@@ -58,9 +58,19 @@ async def put_settings(
             raise HTTPException(404, "project not found")
 
         if body.sanitization_defaults:
-            for etype, sens in body.sanitization_defaults.items():
-                if sens not in _VALID_SENSITIVITIES:
-                    raise HTTPException(422, f"invalid sensitivity '{sens}' for type '{etype}'")
+            for etype, val in body.sanitization_defaults.items():
+                if isinstance(val, str):
+                    if val not in _VALID_SENSITIVITIES:
+                        raise HTTPException(422, f"invalid sensitivity '{val}' for type '{etype}'")
+                elif isinstance(val, dict):
+                    ds = val.get("default_sensitivity")
+                    if ds and ds not in _VALID_SENSITIVITIES:
+                        raise HTTPException(422, f"invalid sensitivity '{ds}' for type '{etype}'")
+                    kw = val.get("judgment_keywords")
+                    if kw is not None and not isinstance(kw, list):
+                        raise HTTPException(422, f"judgment_keywords must be a list for type '{etype}'")
+                else:
+                    raise HTTPException(422, f"invalid value for type '{etype}': must be string or object")
 
         existing = await conn.fetchval(
             "SELECT config FROM org_settings WHERE project_id = $1", project_id
@@ -102,4 +112,9 @@ async def get_sanitization_default(conn, project_id: int, entity_type: str) -> O
     defaults = config.get("sanitization_defaults")
     if not defaults or not isinstance(defaults, dict):
         return None
-    return defaults.get(entity_type)
+    val = defaults.get(entity_type)
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        return val.get("default_sensitivity")
+    return None

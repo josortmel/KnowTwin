@@ -34,6 +34,7 @@ class SessionCreate(BaseModel):
     project_id: int = Field(..., gt=0)
     topic: str = Field(..., min_length=1, max_length=500)
     planned_duration_min: int = Field(45, ge=5, le=240)
+    comm_style: Optional[str] = Field(None, pattern="^(technical|relational)$")
 
 
 class RespondRequest(BaseModel):
@@ -53,13 +54,15 @@ async def create_session(
     async with pool.acquire() as conn:
         role = await check_access(conn, actor, body.project_id, "employee")
 
+        dossier_init = json.dumps({"comm_style": body.comm_style}) if body.comm_style else None
         row = await conn.fetchrow(
             """
-            INSERT INTO interview_sessions (project_id, employee_id, topic, planned_duration_min, status)
-            VALUES ($1, $2, $3, $4, 'scheduled')
+            INSERT INTO interview_sessions (project_id, employee_id, topic, planned_duration_min, status, dossier)
+            VALUES ($1, $2, $3, $4, 'scheduled', $5::jsonb)
             RETURNING id, project_id, employee_id, topic, status, planned_duration_min, created_at
             """,
             body.project_id, int(actor["sub"]), body.topic, body.planned_duration_min,
+            dossier_init,
         )
         return _session_dict(row)
 
@@ -118,6 +121,11 @@ async def start_session(
         from interviewer import InterviewState, prepare_dossier, save_state
 
         state = InterviewState(str(session_id), row["project_id"], row["employee_id"])
+        initial_dossier = row["dossier"]
+        if isinstance(initial_dossier, str):
+            initial_dossier = json.loads(initial_dossier)
+        if isinstance(initial_dossier, dict):
+            state.comm_style = initial_dossier.get("comm_style")
         state = await prepare_dossier(conn, state)
 
         from interviewer import open_topic
@@ -128,8 +136,10 @@ async def start_session(
             "UPDATE interview_sessions SET status = 'in_progress' WHERE id = $1",
             session_id,
         )
+        from interviewer import get_style_directive
         return {"status": "in_progress", "topic": state.current_topic,
-                "session_id": str(session_id)}
+                "session_id": str(session_id),
+                "style_directive": get_style_directive(state)}
 
 
 @router.post("/{session_id}/respond")

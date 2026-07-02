@@ -6,10 +6,8 @@ Employee DENIED /twin/query (403).
 """
 from __future__ import annotations
 
-import html
 import json
 import logging
-import secrets
 from typing import Optional
 from uuid import UUID
 
@@ -18,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from auth import get_current_user
 from db import get_pool
-from permissions import check_access
+from permissions import check_access, render_evidence
 from claims import _visibility_sql, _EMBED_LEVELS
 
 log = logging.getLogger("knowtwin.twin")
@@ -47,10 +45,33 @@ class TwinSource(BaseModel):
     score: float
 
 
+class DocStrengthBreakdown(BaseModel):
+    source_count: int
+    freshness_score: float
+    trust_tier: int
+    computed_strength: float
+
+
+class DisputeVersion(BaseModel):
+    claim_id: str
+    subject_entity: str
+    predicate: str
+    object_value: Optional[str] = None
+    evidence_text: str
+    source_type: Optional[str] = None
+    sensitivity: str
+    corroboration_level: str
+    dispute_state: str
+    criticality: float
+    score: float
+    doc_strength_breakdown: Optional[DocStrengthBreakdown] = None
+
+
 class DisputeGroup(BaseModel):
     subject_entity: str
     predicate: str
-    versions: list[TwinSource]
+    versions: list[DisputeVersion]
+    why_resolved: Optional[str] = None
 
 
 class TwinResponse(BaseModel):
@@ -58,12 +79,6 @@ class TwinResponse(BaseModel):
     sources: list[TwinSource]
     disputes: list[DisputeGroup]
     coverage_context: Optional[dict] = None
-
-
-def _sanitize_for_llm(text: str, delimiter: str) -> str:
-    """Wrap untrusted text with delimiter to prevent injection."""
-    escaped = html.escape(text, quote=True)
-    return f"{delimiter}\n{escaped}\n{delimiter}"
 
 
 async def _semantic_search(conn, query_text: str, project_id: int,
@@ -83,8 +98,9 @@ async def _semantic_search(conn, query_text: str, project_id: int,
     query = f"""
         SELECT c.id, c.subject_entity, c.predicate, c.object_entity, c.object_value,
                c.evidence_text, c.sensitivity, c.corroboration_level, c.dispute_state,
-               c.criticality, c.doc_strength,
-               1 - (c.embedding <=> $1::vector) AS similarity
+               c.criticality, c.doc_strength, c.source_type, c.trust_tier, c.project_id,
+               c.disputed_by_claim_id, c.resolution_note, c.resolved_by_user_id,
+               c.sanitized_text, 1 - (c.embedding <=> $1::vector) AS similarity
         FROM claims c
         WHERE c.project_id = $2
           AND c.embedding IS NOT NULL
@@ -124,8 +140,9 @@ async def _text_search(conn, query_text: str, project_id: int,
     query = f"""
         SELECT c.id, c.subject_entity, c.predicate, c.object_entity, c.object_value,
                c.evidence_text, c.sensitivity, c.corroboration_level, c.dispute_state,
-               c.criticality, c.doc_strength,
-               0.5 AS similarity
+               c.criticality, c.doc_strength, c.source_type, c.trust_tier, c.project_id,
+               c.disputed_by_claim_id, c.resolution_note, c.resolved_by_user_id,
+               c.sanitized_text, 0.5 AS similarity
         FROM claims c
         WHERE c.project_id = $1
           AND c.corroboration_level IN ('single_source','corroborated','corroborated_by_employee','validated')
@@ -167,8 +184,9 @@ async def _graph_expand(conn, seed_claim_ids: list, project_id: int,
     discovered = await conn.fetch(f"""
         SELECT DISTINCT c.id, c.subject_entity, c.predicate, c.object_entity, c.object_value,
                c.evidence_text, c.sensitivity, c.corroboration_level, c.dispute_state,
-               c.criticality, c.doc_strength,
-               0.3 AS similarity
+               c.criticality, c.doc_strength, c.source_type, c.trust_tier, c.project_id,
+               c.disputed_by_claim_id, c.resolution_note, c.resolved_by_user_id,
+               c.sanitized_text, 0.3 AS similarity
         FROM claim_entity_links cel
         JOIN claims c ON c.id = cel.claim_id
         WHERE cel.entity_node_id = ANY($1::bigint[])
@@ -181,48 +199,128 @@ async def _graph_expand(conn, seed_claim_ids: list, project_id: int,
     return [dict(r) for r in discovered]
 
 
-def _assemble_disputes(claims: list[dict]) -> list[DisputeGroup]:
-    """Group disputed claims by subject+predicate, order by doc_strength."""
+async def _compute_claim_breakdown(conn, claim: dict) -> Optional[DocStrengthBreakdown]:
+    """Compute doc_strength breakdown for document-type claims."""
+    if claim.get("source_type") != "document":
+        return None
+    source_count = await conn.fetchval(
+        "SELECT GREATEST(COUNT(DISTINCT source_id), 1)::int FROM claims "
+        "WHERE project_id = $1 AND subject_entity = $2 AND predicate = $3 "
+        "AND object_value = $4 AND source_type = 'document'",
+        claim["project_id"], claim["subject_entity"],
+        claim["predicate"], claim.get("object_value"),
+    )
+    freshness_score = 1.0
+    trust_tier = claim.get("trust_tier") or 0
+    return DocStrengthBreakdown(
+        source_count=source_count,
+        freshness_score=freshness_score,
+        trust_tier=trust_tier,
+        computed_strength=source_count * freshness_score * (trust_tier + 1),
+    )
+
+
+async def _assemble_disputes(conn, claims: list[dict], project_id: int,
+                             role: str = "admin") -> list[DisputeGroup]:
+    """Group disputed/resolved claims by subject+predicate with doc_strength breakdown."""
+    dispute_claims = [
+        c for c in claims
+        if c["dispute_state"] in ("disputed", "resolved_in_favor")
+    ]
+    if not dispute_claims:
+        return []
+
+    seen_ids = {str(c["id"]) for c in claims}
+    counterparts = []
+    for c in dispute_claims:
+        cpart_id = c.get("disputed_by_claim_id")
+        if cpart_id and str(cpart_id) not in seen_ids:
+            if role in ("admin", "curator"):
+                cpart = await conn.fetchrow(
+                    "SELECT id, subject_entity, predicate, object_value, evidence_text, "
+                    "source_type, sensitivity, corroboration_level, dispute_state, "
+                    "criticality, doc_strength, trust_tier, project_id, "
+                    "resolution_note, resolved_by_user_id, disputed_by_claim_id, "
+                    "sanitized_text "
+                    "FROM claims WHERE id = $1",
+                    cpart_id,
+                )
+            else:
+                cpart = await conn.fetchrow(
+                    "SELECT id, subject_entity, predicate, object_value, evidence_text, "
+                    "source_type, sensitivity, corroboration_level, dispute_state, "
+                    "criticality, doc_strength, trust_tier, project_id, "
+                    "resolution_note, resolved_by_user_id, disputed_by_claim_id, "
+                    "sanitized_text "
+                    "FROM claims WHERE id = $1 AND sensitivity IN ('public', 'team')",
+                    cpart_id,
+                )
+            if cpart:
+                counterparts.append(dict(cpart))
+                seen_ids.add(str(cpart_id))
+
+    all_dispute = dispute_claims + counterparts
+
     groups: dict[tuple, list[dict]] = {}
-    for c in claims:
-        if c["dispute_state"] == "disputed":
+    for c in all_dispute:
+        if c["dispute_state"] in ("disputed", "resolved_in_favor", "resolved_against"):
             key = (c["subject_entity"], c["predicate"])
             groups.setdefault(key, []).append(c)
 
     result = []
     for (subj, pred), versions in groups.items():
         sorted_v = sorted(versions, key=lambda x: x.get("doc_strength") or 0, reverse=True)
-        result.append(DisputeGroup(
-            subject_entity=subj,
-            predicate=pred,
-            versions=[TwinSource(
+
+        dv_list = []
+        for v in sorted_v:
+            breakdown = await _compute_claim_breakdown(conn, v)
+            dv_list.append(DisputeVersion(
                 claim_id=str(v["id"]),
                 subject_entity=v["subject_entity"],
                 predicate=v["predicate"],
-                evidence_text=v["evidence_text"],
+                object_value=v.get("object_value"),
+                evidence_text=render_evidence(role, v["evidence_text"], v.get("sanitized_text")),
+                source_type=v.get("source_type"),
                 sensitivity=v["sensitivity"],
                 corroboration_level=v["corroboration_level"],
                 dispute_state=v["dispute_state"],
                 criticality=v.get("criticality", 0.5),
                 score=float(v.get("similarity", 0)),
-            ) for v in sorted_v],
+                doc_strength_breakdown=breakdown,
+            ))
+
+        why = None
+        resolved = [v for v in sorted_v if v["dispute_state"] in ("resolved_in_favor", "resolved_against")]
+        if resolved:
+            r = resolved[0]
+            note = r.get("resolution_note") or ""
+            rby = r.get("resolved_by_user_id")
+            if rby is None and note.startswith("auto:"):
+                why = f"Auto-resolved: {note}"
+            elif rby is not None:
+                why = f"Manually resolved by user {rby}: {note}" if note else f"Manually resolved by user {rby}"
+            elif note:
+                why = note
+
+        result.append(DisputeGroup(
+            subject_entity=subj,
+            predicate=pred,
+            versions=dv_list,
+            why_resolved=why,
         ))
     return result
 
 
-def _format_answer(question: str, claims: list[dict]) -> str:
+def _format_answer(question: str, claims: list[dict], role: str = "admin") -> str:
     """Format answer with mandatory citations. No LLM — deterministic for now."""
     if not claims:
         return "Insufficient information — no matching claims found for this question."
-
-    delimiter = f"__KT_{secrets.token_hex(8)}__"
-    safe_q = _sanitize_for_llm(question, delimiter)
 
     lines = []
     for i, c in enumerate(claims, 1):
         subj = c["subject_entity"]
         pred = c["predicate"]
-        ev = c["evidence_text"][:200]
+        ev = render_evidence(role, c["evidence_text"], c.get("sanitized_text"))[:200]
         dispute = ""
         if c["dispute_state"] == "disputed":
             dispute = " [DISPUTED]"
@@ -286,7 +384,7 @@ async def twin_query(
                 claim_id=str(c["id"]),
                 subject_entity=c["subject_entity"],
                 predicate=c["predicate"],
-                evidence_text=c["evidence_text"],
+                evidence_text=render_evidence(role, c["evidence_text"], c.get("sanitized_text")),
                 sensitivity=c["sensitivity"],
                 corroboration_level=c["corroboration_level"],
                 dispute_state=c["dispute_state"],
@@ -296,8 +394,8 @@ async def twin_query(
             for c in all_claims
         ]
 
-        disputes = _assemble_disputes(all_claims)
-        answer = _format_answer(body.question, all_claims)
+        disputes = await _assemble_disputes(conn, all_claims, body.project_id, role)
+        answer = _format_answer(body.question, all_claims, role)
 
         return TwinResponse(
             answer=answer,

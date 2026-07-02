@@ -108,12 +108,39 @@ def test_entities_seeded():
 
 
 def test_coverage_view_works():
-    """entity_coverage view returns rows for project."""
+    """entity_coverage view returns rows with numeric coverage > 0 for seeded entities."""
     rows = _run(_dbrows(
-        "SELECT entity_name, coverage_state FROM entity_coverage WHERE project_id = $1 LIMIT 5",
+        "SELECT entity_name, coverage_pct, coverage_state FROM entity_coverage WHERE project_id = $1",
         _PID,
     ))
     assert len(rows) > 0, "coverage view should return rows"
+    covered = [r for r in rows if float(r["coverage_pct"] or 0) > 0]
+    assert len(covered) > 0, "at least one entity should have coverage > 0 after interviews"
+
+
+def test_contradiction_states():
+    """Known contradiction pairs have expected dispute states."""
+    rows = _run(_dbrows(
+        "SELECT subject_entity, predicate, dispute_state FROM claims "
+        "WHERE project_id = $1 AND tags @> ARRAY['demo_seed'] "
+        "AND dispute_state != 'undisputed'",
+        _PID,
+    ))
+    assert len(rows) > 0, "should have disputed/resolved claims after seed"
+    states = {r["dispute_state"] for r in rows}
+    assert states & {"disputed", "resolved_in_favor", "resolved_against"}, \
+        f"expected dispute activity, got states: {states}"
+
+    # Verify known pairs
+    bn_decide = _run(_dbrows(
+        "SELECT dispute_state FROM claims WHERE project_id = $1 AND subject_entity = 'Banco Norte' "
+        "AND predicate = 'decide_en' AND tags @> ARRAY['demo_seed']",
+        _PID,
+    ))
+    if bn_decide:
+        bn_states = {r["dispute_state"] for r in bn_decide}
+        assert bn_states & {"disputed", "resolved_in_favor", "resolved_against"}, \
+            f"Banco Norte decide_en should have dispute activity, got {bn_states}"
 
 
 def test_twin_insufficient_info(client, admin_key):

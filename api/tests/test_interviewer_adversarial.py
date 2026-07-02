@@ -108,6 +108,7 @@ def setup_teardown():
     async def _teardown():
         conn = await asyncpg.connect(_DB_URL)
         try:
+            await conn.execute("DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE name LIKE $1)", f"{_PREFIX}%")
             await conn.execute("DELETE FROM claims WHERE subject_entity LIKE $1", f"{_PREFIX}%")
             await conn.execute("DELETE FROM interview_sessions WHERE topic LIKE $1", f"{_PREFIX}%")
             await conn.execute("DELETE FROM entity_expected_claims WHERE entity_name LIKE $1", f"{_PREFIX}%")

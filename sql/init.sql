@@ -285,6 +285,8 @@ CREATE TABLE claims (
   doc_strength         REAL,
   resolution_note      TEXT,
   resolved_by_user_id  INT REFERENCES users(id),
+  resolver_user_id     INT REFERENCES users(id),
+  sanitized_text       TEXT,
 
   tags                 TEXT[] NOT NULL DEFAULT '{}',
   created_at           TIMESTAMPTZ DEFAULT now(),

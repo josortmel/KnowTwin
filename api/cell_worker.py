@@ -325,9 +325,21 @@ def _curator_post_handler(pool, aid, cfg, ps, pe):
     return run_curator_post(pool, cfg.get("session_id", ""))
 
 
+def _dossier_regen_handler(pool, aid, cfg, ps, pe):
+    from dossier import regenerate_dossier
+    return regenerate_dossier(pool, cfg.get("session_id", ""))
+
+
+def _retention_expiry_handler(pool, aid, cfg, ps, pe):
+    from deletion import run_retention_expiry
+    return run_retention_expiry(pool, cfg.get("project_id", 1))
+
+
 _BUILTIN_DISPATCH = {
     ("curator_pre", None): _curator_pre_handler,
     ("curator_post", None): _curator_post_handler,
+    ("dossier_regen", None): _dossier_regen_handler,
+    ("retention_expiry", None): _retention_expiry_handler,
     ("verifier", None): _verifier_handler,
 }
 
@@ -347,5 +359,24 @@ async def start_curator_post_listener(pool):
                 await run_curator_post(pool, session_id)
             except Exception as exc:
                 log.warning("curator_post failed for session %s: %r", session_id, exc)
+    finally:
+        await pool.release(conn)
+
+
+async def start_dossier_regen_listener(pool):
+    """LISTEN on knowtwin_dossier_regen channel for post-curator dossier refresh."""
+    conn = await pool.acquire()
+    try:
+        await conn.add_listener("knowtwin_dossier_regen", lambda *args: None)
+        import asyncio
+        while True:
+            notif = await conn.connection.notifies.get()
+            session_id = notif.payload
+            log.info("dossier_regen triggered for session %s", session_id)
+            try:
+                from dossier import regenerate_dossier
+                await regenerate_dossier(pool, session_id)
+            except Exception as exc:
+                log.warning("dossier_regen failed for session %s: %r", session_id, exc)
     finally:
         await pool.release(conn)
