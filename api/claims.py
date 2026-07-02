@@ -494,7 +494,7 @@ async def batch_claims(body: BatchRequest, actor: dict = Depends(get_current_use
                             try:
                                 evidence = await conn.fetchval(
                                     "SELECT evidence_text FROM claims WHERE id = $1", cid)
-                                vec = await embed_text(evidence, "passage")
+                                vec = await embed_text(evidence, prompt_name="passage")
                                 if vec is None:
                                     failed.append({"id": str(cid), "error": "embedding_failed"})
                                     continue
