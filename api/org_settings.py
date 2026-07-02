@@ -16,7 +16,7 @@ log = logging.getLogger("knowtwin.org_settings")
 
 router = APIRouter(prefix="/projects", tags=["settings"])
 
-_VALID_SENSITIVITIES = frozenset({"public", "team", "restricted", "private"})
+_VALID_SENSITIVITIES = frozenset({"public", "team", "restricted"})
 
 
 class SettingsPayload(BaseModel):
@@ -62,7 +62,10 @@ async def put_settings(
                 if sens not in _VALID_SENSITIVITIES:
                     raise HTTPException(422, f"invalid sensitivity '{sens}' for type '{etype}'")
 
-        config: dict = {}
+        existing = await conn.fetchval(
+            "SELECT config FROM org_settings WHERE project_id = $1", project_id
+        )
+        config: dict = json.loads(existing) if existing else {}
         if body.sanitization_defaults is not None:
             config["sanitization_defaults"] = body.sanitization_defaults
         if body.retention is not None:
@@ -75,6 +78,13 @@ async def put_settings(
             ON CONFLICT (project_id) DO UPDATE SET config = $2::jsonb
             """,
             project_id, json.dumps(config),
+        )
+        await conn.execute(
+            """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
+            VALUES ($1, 'update_settings', 'org_settings', $2, $3::jsonb, $4)""",
+            int(actor["sub"]), str(project_id),
+            json.dumps(config),
+            actor.get("organization_id"),
         )
         return {"project_id": project_id, "config": config}
 

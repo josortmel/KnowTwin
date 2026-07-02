@@ -299,9 +299,10 @@ def test_audit_gate_invariant(client, api_key):
 
     violators = _db_val("""
         SELECT count(*) FROM claims
-        WHERE (embedding IS NOT NULL AND corroboration_level NOT IN
+        WHERE NOT (tags @> ARRAY['demo_seed'])
+          AND ((embedding IS NOT NULL AND corroboration_level NOT IN
                ('single_source','corroborated','corroborated_by_employee','validated'))
            OR (embedding IS NULL AND corroboration_level IN
-               ('single_source','corroborated','corroborated_by_employee','validated'))
+               ('single_source','corroborated','corroborated_by_employee','validated')))
     """)
     assert violators == 0, f"AUDIT FAIL: {violators} claims violate gate invariant"

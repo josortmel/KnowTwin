@@ -14,8 +14,7 @@ async def run_governance_cycle(pool) -> None:
     """Execute full governance cycle. Called hourly by worker."""
     log.info("Governance cycle starting")
     t0 = datetime.now(timezone.utc)
-    from search import flush_accessed_buffer
-    await flush_accessed_buffer(pool)
+    # flush_accessed_buffer removed (D-P1.16-2): search.py queries dropped memories table
     for task_fn in (
         mark_stale_memories,
         purge_old_alias_candidates,

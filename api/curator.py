@@ -210,13 +210,10 @@ async def _promote_claim(conn, claim_id) -> bool:
                 "embedding = $1::vector, updated_at = now() WHERE id = $2",
                 str(vec), claim_id,
             )
+            return True
         else:
-            await conn.execute(
-                "UPDATE claims SET corroboration_level = 'single_source', "
-                "updated_at = now() WHERE id = $1",
-                claim_id,
-            )
-        return True
+            log.warning("Embed failed for claim %s — stays draft (gate invariant)", claim_id)
+            return False
     except Exception as exc:
         log.warning("Promote failed for claim %s: %r", claim_id, exc)
         return False
@@ -315,6 +312,14 @@ async def _write_verified_document(conn, project_id: int,
                                     chunks: list) -> Optional[str]:
     """Write verified base document with markers."""
     sections = []
+    # Mark stale claims BEFORE building verified doc (BC2 fix — freshness must be current for markers)
+    await conn.execute("""
+        UPDATE claims SET freshness_state = 'stale'
+        WHERE project_id = $1
+          AND created_at < now() - interval '90 days'
+          AND freshness_state != 'stale'
+    """, project_id)
+
     sections.append("# Verified Base Document\n")
     sections.append(f"Generated: {datetime.now(timezone.utc).isoformat()}\n")
 
@@ -357,14 +362,6 @@ async def _write_verified_document(conn, project_id: int,
         VALUES ($1, 'offboarding', $2, $3, $4)
         RETURNING id
     """, project_id, content_md, gap_count, len(contradictions))
-
-    # Set freshness_state for stale claims
-    await conn.execute("""
-        UPDATE claims SET freshness_state = 'stale'
-        WHERE project_id = $1
-          AND created_at < now() - interval '90 days'
-          AND freshness_state != 'stale'
-    """, project_id)
 
     return doc_id
 

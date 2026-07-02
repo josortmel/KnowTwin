@@ -162,7 +162,7 @@ async def _graph_expand(conn, seed_claim_ids: list, project_id: int,
     if len(entity_ids) > _MAX_SEED_ENTITIES:
         entity_ids = entity_ids[:_MAX_SEED_ENTITIES]
 
-    vis_sql, vis_params = _visibility_sql(role, actor_id, 3)
+    vis_sql, vis_params = _visibility_sql(role, actor_id, 4)
 
     discovered = await conn.fetch(f"""
         SELECT DISTINCT c.id, c.subject_entity, c.predicate, c.object_entity, c.object_value,

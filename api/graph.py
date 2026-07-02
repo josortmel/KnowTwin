@@ -43,7 +43,7 @@ from permissions import no_null_bytes as _no_null_bytes
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
-GRAPH_NAME = "ecodb_graph"
+GRAPH_NAME = "knowtwin_graph"
 MAX_NODE_NAME_LEN = 500
 MAX_PREDICATE_LEN = 200
 MAX_BATCH = 100

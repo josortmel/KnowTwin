@@ -234,27 +234,31 @@ async def upload_document(
             os.unlink(stored_path)
             raise HTTPException(404, "project not found")
 
-        row = await conn.fetchrow(
-            """
-            INSERT INTO documents (uri, filename, doc_type, workspace_id, project_id, visibility, status, trust_hint)
-            VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7)
-            RETURNING id, uri, filename, doc_type, workspace_id, project_id,
-                      visibility::text, status, retry_count,
-                      processing_started_at, last_indexed, processing_metrics,
-                      base_weight, trust_hint, created_at
-            """,
-            stored_path, file.filename, doc_type,
-            workspace_id, project_id, visibility,
-            trust_hint,
-        )
-        await conn.execute("SELECT pg_notify('knowtwin_ingest', $1)", str(row["id"]))
-        await conn.execute(
-            """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
-            VALUES ($1, 'upload_document', 'document', $2, $3::jsonb, $4)""",
-            int(actor["sub"]), str(row["id"]),
-            json.dumps({"filename": file.filename, "project_id": project_id, "size": len(content)}),
-            actor.get("organization_id"),
-        )
+        try:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO documents (uri, filename, doc_type, workspace_id, project_id, visibility, status, trust_hint)
+                VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7)
+                RETURNING id, uri, filename, doc_type, workspace_id, project_id,
+                          visibility::text, status, retry_count,
+                          processing_started_at, last_indexed, processing_metrics,
+                          base_weight, trust_hint, created_at
+                """,
+                stored_path, file.filename, doc_type,
+                workspace_id, project_id, visibility,
+                trust_hint,
+            )
+            await conn.execute("SELECT pg_notify('knowtwin_ingest', $1)", str(row["id"]))
+            await conn.execute(
+                """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
+                VALUES ($1, 'upload_document', 'document', $2, $3::jsonb, $4)""",
+                int(actor["sub"]), str(row["id"]),
+                json.dumps({"filename": file.filename, "project_id": project_id, "size": len(content)}),
+                actor.get("organization_id"),
+            )
+        except Exception:
+            os.unlink(stored_path)
+            raise
         return _row_to_response(row)
 # ---------------------------------------------------------------------------
 

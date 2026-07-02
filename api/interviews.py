@@ -221,7 +221,8 @@ async def voice(
         )
         if row is None:
             raise HTTPException(404, "session not found")
-        await check_access(conn, actor, row["project_id"], "employee")
+        role = await check_access(conn, actor, row["project_id"], "employee")
+        _check_session_ownership(actor, row, role)
         if row["status"] != "in_progress":
             raise HTTPException(409, f"session is {row['status']}, not in_progress")
 

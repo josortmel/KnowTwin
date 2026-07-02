@@ -390,7 +390,7 @@ async def expand_by_graph(
             try:
                 await conn.execute("SET LOCAL statement_timeout = '4500'")
                 rows = await asyncio.wait_for(conn.fetch(f"""
-                    SELECT * FROM cypher('ecodb_graph', $$
+                    SELECT * FROM cypher('knowtwin_graph', $$
                         UNWIND $ids AS sid
                         MATCH (e:Entity {{sql_id: sid}})-[*{hop_depth}]-(connected:Entity)
                         WHERE connected.sql_id <> sid

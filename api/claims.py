@@ -37,7 +37,7 @@ _EMBED_LEVELS = frozenset({
 
 _VALID_TRANSITIONS = {
     "draft": {"single_source", "rejected"},
-    "single_source": {"corroborated", "rejected"},
+    "single_source": {"corroborated", "corroborated_by_employee", "rejected"},
     "corroborated": {"corroborated_by_employee", "rejected"},
     "corroborated_by_employee": {"validated", "rejected"},
     "validated": {"rejected"},

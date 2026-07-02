@@ -1,8 +1,8 @@
 import { get } from "../lib/api";
 
 function csvSafe(value: unknown): string {
-  const s = String(value ?? "");
-  if (/^[=+\-@]/.test(s)) return "'" + s;
+  let s = String(value ?? "");
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
   if (s.includes(",") || s.includes('"') || s.includes("\n")) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
