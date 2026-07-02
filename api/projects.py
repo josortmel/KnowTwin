@@ -306,6 +306,25 @@ async def get_project(
     return ProjectResponse(**dict(row))
 
 
+@router.get("/projects/{project_id}/members")
+async def list_project_members(
+    project_id: int,
+    actor: dict = Depends(get_current_user),
+):
+    """List members of a project with roles. Curator/admin only."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        from permissions import check_access
+        await check_access(conn, actor, project_id, "curator")
+        rows = await conn.fetch(
+            "SELECT u.id AS user_id, u.name, pm.role "
+            "FROM project_members pm JOIN users u ON u.id = pm.user_id "
+            "WHERE pm.project_id = $1 ORDER BY pm.role, u.name",
+            project_id,
+        )
+        return [{"user_id": r["user_id"], "name": r["name"], "role": r["role"]} for r in rows]
+
+
 @router.put("/projects/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project_id: int,
