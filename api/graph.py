@@ -946,7 +946,7 @@ async def merge_entities(
     target_id: int,
     merged_by: int,
     reason: Optional[str],
-    pool,
+    pool_or_conn,
 ) -> dict:
     """Task 5.10 — Soft-merge source node into target.
 
@@ -955,8 +955,9 @@ async def merge_entities(
     Logs operation to entity_merge_log.
     Returns merge log info dict.
     Raises ValueError on bad input.
+    pool_or_conn: accepts either a Pool (acquires conn) or an existing Connection.
     """
-    async with pool.acquire() as conn:
+    async def _do_merge(conn):
         src = await conn.fetchrow("SELECT id, status FROM nodes WHERE id = $1", source_id)
         if src is None:
             raise ValueError(f"source node {source_id} not found")
@@ -986,12 +987,18 @@ async def merge_entities(
                 """,
                 source_id, canonical_id, target_id, merged_by, reason,
             )
-    return {
-        "merge_log_id": log_row["id"],
-        "source_node_id": source_id,
-        "canonical_node_id": canonical_id,
-        "merged_at": log_row["merged_at"].isoformat(),
-    }
+        return {
+            "merge_log_id": log_row["id"],
+            "source_node_id": source_id,
+            "canonical_node_id": canonical_id,
+            "merged_at": log_row["merged_at"].isoformat(),
+        }
+
+    if hasattr(pool_or_conn, 'acquire'):
+        async with pool_or_conn.acquire() as conn:
+            return await _do_merge(conn)
+    else:
+        return await _do_merge(pool_or_conn)
 
 
 async def undo_merge(source_node_id: int, pool) -> dict:

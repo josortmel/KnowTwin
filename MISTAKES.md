@@ -378,3 +378,43 @@
   /api/v1/stats/system. No inventé un endpoint de presence que no existe.
 - **Regla:** al portar un widget, quita lo que dependa de infraestructura que el
   target no tiene (SSE presence). No lo fakees.
+
+## Bug hunt (post-rebuild), 2026-07-02
+
+### 1. BUG (mío): botones "Add" de Predicates/Dictionary no hacían submit
+- **Qué pasó:** `<Button variant="primary" onClick={() => {}}>Add</Button>` dentro de
+  un `<form onSubmit>`. El componente Button hardcodea type="button" → un click NO
+  dispara el submit del form. onClick vacío → click no hacía NADA. Solo Enter en un
+  input enviaba el form.
+- **Causa real:** al portar de EcoDB (que usaba `<button type="submit">` crudo) metí
+  el Button del kit sin pasar type. Button es type="button" por defecto.
+- **Cómo se resolvió:** `type="submit"` en esos 2 botones (Button hace spread de
+  {...rest} DESPUÉS de type="button", así que type="submit" lo sobreescribe).
+  Verificado: requestSubmit ahora dispara POST /admin/predicates.
+- **Regla:** un Button del kit dentro de un form NO envía el form al click (es
+  type=button). Para el submit-por-click, pásale type="submit" explícito.
+
+### 2. Invalidaciones cross-view (INV-1..5, encontradas con Lienzo)
+- Las mutations invalidaban su propia query pero no las de OTRAS vistas que muestran
+  el mismo dato. Añadido en onSuccess:
+  - useResolveDispute → +inbox-details +attention-summary
+  - useAssignResolver → +inbox-details
+  - useUpdateStaleness → +claims +knowledge-stats
+  - useReviewDeletion → +inbox-details +attention-summary
+  - usePromoteClaim → +graph-totals +knowledge-stats (promote crea triples)
+- **Regla:** al invalidar tras una mutation, piensa en TODAS las vistas que muestran
+  ese dato, no solo la vista actual. Un claim aparece en Explorer, Dashboard, Graph,
+  Decisions — invalida todas sus keys.
+
+### 3. Verificado OK (no eran bugs)
+- Alias approve refresh: la invalidación de useReviewAlias SÍ refresca (verificado en
+  browser — el candidato aprobado desaparece de la lista pending). El bug de EcoDB no
+  se reprodujo en KnowTwin.
+- Scroll overflow: todos los contenedores de lista tienen overflow-y-auto + min-h-0.
+- Error states: merge/delete/resolve fallidos → toast o InlineWarn, sin romper el flujo.
+
+### 4. FINDING abierto (decisión de producto): claim count system-wide vs project
+- Dashboard card "Claims" usa /api/v1/stats/system.db.claims_count (SYSTEM-WIDE, 34),
+  pero todo lo demás del dashboard es project-scoped (project_id=1) y Explorer usa
+  /claims?project_id=1 (17). Inconsistencia visible. Pendiente decisión de Pepe/Lienzo
+  sobre qué count mostrar (no lo cambio unilateralmente — es semántico).

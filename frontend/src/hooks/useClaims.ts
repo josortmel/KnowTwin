@@ -38,6 +38,16 @@ export function useClaims(projectId: number) {
   });
 }
 
+// Project-scoped claim total (the page `total`, cheap via limit=1). Keyed under
+// ["claims", ...] so the existing claim-mutation invalidations refresh it.
+export function useClaimCount(projectId: number) {
+  return useQuery<number>({
+    queryKey: ["claims", "count", projectId],
+    queryFn: async () => (await get<ClaimsPage>(`/claims?project_id=${projectId}&limit=1`)).total,
+    enabled: projectId > 0,
+  });
+}
+
 // Browse with server-side filters — VERIFIED (api/claims.py:362) the endpoint
 // accepts corroboration_level, dispute_state, subject_entity, limit. source_type /
 // sensitivity are NOT server params → the Explorer filters those client-side.
@@ -81,7 +91,12 @@ export function usePromoteClaim() {
     onError: (_e, _v, ctx) => {
       ctx?.prev?.forEach(([key, data]) => qc.setQueryData(key, data));
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["claims"] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["claims"] });
+      // Promotion can create triples (Hilo) → refresh graph totals + knowledge health.
+      qc.invalidateQueries({ queryKey: ["graph-totals"] });
+      qc.invalidateQueries({ queryKey: ["knowledge-stats"] });
+    },
   });
 }
 

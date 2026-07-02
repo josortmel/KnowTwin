@@ -6,11 +6,11 @@ import { Dot } from "../../components/Dot";
 import { SafeText } from "../../components/SafeText";
 import { useCoverage } from "../../hooks/useCoverage";
 import { useDocuments, type Document } from "../../hooks/useDocuments";
+import { useClaimCount } from "../../hooks/useClaims";
 import { useSessionList } from "../../hooks/useInterviews";
 import { useProjectMembers } from "../../hooks/useProjectMembers";
 import {
   useMemoryStats,
-  useSystemStats,
   useKnowledgeStats,
   useTimeline,
   useAttentionSummary,
@@ -28,7 +28,7 @@ const fmt = (n: number | undefined | null): string => (n == null ? "—" : n.toL
 export function DashboardView() {
   const navigate = useNavigate();
   const memory = useMemoryStats();
-  const system = useSystemStats();
+  const claimCount = useClaimCount(PROJECT_ID);
   const coverage = useCoverage(PROJECT_ID);
   const attention = useAttentionSummary();
   const documents = useDocuments(PROJECT_ID);
@@ -51,12 +51,12 @@ export function DashboardView() {
         <div className="md:col-span-1 xl:col-span-3">
           <StatCard
             label="Claims"
-            value={system.data ? fmt(system.data.db.claims_count) : "—"}
+            value={claimCount.data != null ? fmt(claimCount.data) : "—"}
             sub={claimsSub}
-            loading={system.isPending}
-            error={system.isError}
+            loading={claimCount.isPending}
+            error={claimCount.isError}
             onClick={() => navigate("/setup?tab=inbox")}
-            tooltip="Total claims captured, by source type"
+            tooltip="Claims captured in this project, by source type"
           />
         </div>
         <div className="md:col-span-1 xl:col-span-3">

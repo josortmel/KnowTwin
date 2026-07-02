@@ -37,8 +37,8 @@ _DOC_TRUST_HINTS = {
     "plan_retailco.md": "signed_plan",
 }
 
-CANNED_EXTRACTIONS = json.loads((SEED_DIR / "canned_extractions.json").read_text())
-SESSION_RESPONSES = json.loads((SEED_DIR / "session_responses.json").read_text())
+CANNED_EXTRACTIONS = json.loads((SEED_DIR / "canned_extractions.json").read_text(encoding="utf-8"))
+SESSION_RESPONSES = json.loads((SEED_DIR / "session_responses.json").read_text(encoding="utf-8"))
 
 
 async def main():

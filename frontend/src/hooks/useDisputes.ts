@@ -59,6 +59,9 @@ export function useResolveDispute() {
       qc.invalidateQueries({ queryKey: ["disputes"] });
       qc.invalidateQueries({ queryKey: ["claims"] });
       qc.invalidateQueries({ queryKey: ["coverage"] });
+      // Cross-view: the Decisions Inbox list + the Dashboard/inbox counts.
+      qc.invalidateQueries({ queryKey: ["inbox-details"] });
+      qc.invalidateQueries({ queryKey: ["attention-summary"] });
     },
   });
 }
@@ -68,7 +71,10 @@ export function useAssignResolver() {
   return useMutation({
     mutationFn: ({ claimId, resolverUserId }: { claimId: string; resolverUserId: number }) =>
       put(`/claims/${claimId}/assign-resolver`, { resolver_user_id: resolverUserId }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["disputes"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["disputes"] });
+      qc.invalidateQueries({ queryKey: ["inbox-details"] });
+    },
   });
 }
 

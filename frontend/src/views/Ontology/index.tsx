@@ -433,7 +433,7 @@ function PredicatesTab({ isAdmin }: { isAdmin: boolean }) {
               </option>
             ))}
           </select>
-          <Button variant="primary" onClick={() => {}} disabled={busy || !name.trim()} className="px-4 py-2 text-[12px]">
+          <Button variant="primary" type="submit" disabled={busy || !name.trim()} className="px-4 py-2 text-[12px]">
             {editing ? "Update" : "Add"}
           </Button>
           {editing && (
@@ -719,7 +719,7 @@ function DictionaryTab({ isAdmin }: { isAdmin: boolean }) {
             <div className="min-w-[110px] flex-[1.3]">
               <TextInput value={notes} onChange={setNotes} placeholder="Notes" />
             </div>
-            <Button variant="primary" onClick={() => {}} disabled={busy || !name.trim() || !type.trim()} className="px-4 py-2 text-[12px]">
+            <Button variant="primary" type="submit" disabled={busy || !name.trim() || !type.trim()} className="px-4 py-2 text-[12px]">
               {editId == null ? "Add" : "Update"}
             </Button>
             {editId != null && (

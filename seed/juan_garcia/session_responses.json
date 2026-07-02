@@ -79,5 +79,45 @@
         ]}
       }
     ]
+  },
+  "session_4": {
+    "topic": "Team knowledge and hidden processes",
+    "turns": [
+      {
+        "text": "Fernando Diaz is the only one who really understands Jenkins CI. He set it up years ago and it's held together with duct tape. If Jenkins goes down and Fernando is not here, we're stuck for hours.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Fernando Diaz", "predicate": "unico_conocedor_de", "object_entity": "Jenkins CI", "evidence_text": "Fernando Diaz is the only one who really understands Jenkins CI, he set it up years ago"},
+          {"subject_entity": "Fernando Diaz", "predicate": "conoce_workaround", "object_entity": "Jenkins CI", "evidence_text": "Fernando knows all the workarounds for Jenkins CI, it's held together with duct tape"}
+        ]}
+      },
+      {
+        "text": "Laura Gomez is handling the GDPR compliance audit basically alone. Patricia Navarro from outside comes in twice a month to review but Laura does all the heavy lifting. If Laura leaves too, we fail the audit.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Laura Gomez", "predicate": "experto_en", "object_entity": "Proyecto Compliance GDPR", "evidence_text": "Laura Gomez handles the GDPR compliance audit basically alone, she does all the heavy lifting"},
+          {"subject_entity": "Patricia Navarro", "predicate": "revisada_por", "object_entity": "Proyecto Compliance GDPR", "evidence_text": "Patricia Navarro reviews the GDPR compliance audit twice a month as external consultant"}
+        ]}
+      },
+      {
+        "text": "The reconciliation_service is a mess. It runs on Kafka events but nobody wrote tests for it. I wrote it in a weekend two years ago and never had time to document it properly. It just works, somehow.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Juan Garcia", "predicate": "creado_por", "object_entity": "reconciliation_service", "evidence_text": "Juan Garcia created the reconciliation_service in a weekend two years ago, never properly documented"},
+          {"subject_entity": "reconciliation_service", "predicate": "requiere", "object_entity": "Kafka", "evidence_text": "The reconciliation_service runs on Kafka events for real-time data validation"}
+        ]}
+      },
+      {
+        "text": "The backup nocturno is still manual. Pedro does it every night before going home. We talked about automating it with the Consultora Ágil SL team but never got around to it. It's a huge risk.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Backup nocturno manual", "predicate": "riesgo_activo", "object_entity": "Data Warehouse", "evidence_text": "The nightly backup is still manual, Pedro does it every night, huge risk if he's absent"},
+          {"subject_entity": "Pedro Sanchez", "predicate": "ejecutado_por", "object_entity": "Backup nocturno manual", "evidence_text": "Pedro Sanchez executes the manual nightly backup before going home every day"}
+        ]}
+      },
+      {
+        "text": "Isabel Moreno is the only person who has a relationship with Logistica Sur. They're a small client but they pay on time and never complain. If Isabel is reassigned, that account will go silent.",
+        "canned_extraction": {"claims": [
+          {"subject_entity": "Isabel Moreno", "predicate": "unico_conocedor_de", "object_entity": "Logistica Sur", "evidence_text": "Isabel Moreno is the only person who has a relationship with Logistica Sur"},
+          {"subject_entity": "Logistica Sur", "predicate": "coordina_con", "object_entity": "RetailCo", "evidence_text": "Logistica Sur has similar integration needs as RetailCo, both require API access"}
+        ]}
+      }
+    ]
   }
 }

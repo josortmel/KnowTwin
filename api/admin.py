@@ -945,52 +945,53 @@ async def review_alias_candidate(
         if row["status"] != "pending":
             raise HTTPException(409, f"candidate already reviewed (status={row['status']})")
 
-        await conn.execute(
-            """UPDATE entity_alias_candidates
-               SET status = $1, reviewed_by = $2, last_seen = now()
-               WHERE id = $3""",
-            body.status, int(actor["sub"]), candidate_id,
-        )
-
-        if body.status == "approved" and body.merge:
-            source_node = await conn.fetchrow(
-                "SELECT id FROM nodes WHERE lower(name) = lower($1) AND status = 'active' LIMIT 1",
-                row["source_name"],
-            )
-            if source_node is None:
-                raise HTTPException(422, f"source node '{row['source_name']}' not found as active node — merge skipped")
-
-            target_name = await conn.fetchval(
-                "SELECT name FROM nodes WHERE id = $1", row["target_node_id"]
-            )
-            if target_name:
-                await _check_admin_op(conn, actor, "merge_entities", target_name)
-
-            from graph import merge_entities as _merge_entities
-            try:
-                if body.reverse:
-                    await _merge_entities(
-                        row["target_node_id"], source_node["id"],
-                        int(actor["sub"]), body.reason, pool,
-                    )
-                else:
-                    await _merge_entities(
-                        source_node["id"], row["target_node_id"],
-                        int(actor["sub"]), body.reason, pool,
-                    )
-            except ValueError as exc:
-                raise HTTPException(422, str(exc))
-            audit_source = row["source_name"]
-            audit_target = target_name
-            if body.reverse:
-                audit_source, audit_target = audit_target, audit_source
+        async with conn.transaction():
             await conn.execute(
-                """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
-                VALUES ($1, 'merge_via_alias_review', 'entity', $2, $3::jsonb, $4)""",
-                int(actor["sub"]), str(candidate_id),
-                json.dumps({"source": audit_source, "target": audit_target, "candidate_id": candidate_id, "reverse": body.reverse}),
-                actor.get("organization_id"),
+                """UPDATE entity_alias_candidates
+                   SET status = $1, reviewed_by = $2, last_seen = now()
+                   WHERE id = $3""",
+                body.status, int(actor["sub"]), candidate_id,
             )
+
+            if body.status == "approved" and body.merge:
+                source_node = await conn.fetchrow(
+                    "SELECT id FROM nodes WHERE lower(name) = lower($1) AND status = 'active' LIMIT 1",
+                    row["source_name"],
+                )
+                if source_node is None:
+                    raise HTTPException(422, f"source node '{row['source_name']}' not found as active node — merge skipped")
+
+                target_name = await conn.fetchval(
+                    "SELECT name FROM nodes WHERE id = $1", row["target_node_id"]
+                )
+                if target_name:
+                    await _check_admin_op(conn, actor, "merge_entities", target_name)
+
+                from graph import merge_entities as _merge_entities
+                try:
+                    if body.reverse:
+                        await _merge_entities(
+                            row["target_node_id"], source_node["id"],
+                            int(actor["sub"]), body.reason, conn,
+                        )
+                    else:
+                        await _merge_entities(
+                            source_node["id"], row["target_node_id"],
+                            int(actor["sub"]), body.reason, conn,
+                        )
+                except ValueError as exc:
+                    raise HTTPException(422, str(exc))
+                audit_source = row["source_name"]
+                audit_target = target_name
+                if body.reverse:
+                    audit_source, audit_target = audit_target, audit_source
+                await conn.execute(
+                    """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
+                    VALUES ($1, 'merge_via_alias_review', 'entity', $2, $3::jsonb, $4)""",
+                    int(actor["sub"]), str(candidate_id),
+                    json.dumps({"source": audit_source, "target": audit_target, "candidate_id": candidate_id, "reverse": body.reverse}),
+                    actor.get("organization_id"),
+                )
 
     # Fetch updated row
     async with pool.acquire() as conn:

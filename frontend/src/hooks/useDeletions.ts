@@ -39,6 +39,9 @@ export function useReviewDeletion() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deletion-requests"] });
       qc.invalidateQueries({ queryKey: ["claims"] });
+      // Cross-view: the Decisions Inbox list + Dashboard/inbox counts.
+      qc.invalidateQueries({ queryKey: ["inbox-details"] });
+      qc.invalidateQueries({ queryKey: ["attention-summary"] });
     },
   });
 }

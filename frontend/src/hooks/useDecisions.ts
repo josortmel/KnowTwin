@@ -52,6 +52,9 @@ export function useUpdateStaleness() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inbox-details"] });
       qc.invalidateQueries({ queryKey: ["attention-summary"] });
+      // Cross-view: Explorer claim list + Dashboard KnowledgeHealth stale count.
+      qc.invalidateQueries({ queryKey: ["claims"] });
+      qc.invalidateQueries({ queryKey: ["knowledge-stats"] });
     },
   });
 }
