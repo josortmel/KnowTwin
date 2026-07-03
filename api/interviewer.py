@@ -258,6 +258,7 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
         raw = await _llm_call(
             extraction_system,
             safe_text,
+            conn=conn,
         )
         data = json.loads(raw)
         raw_claims = data.get("claims", [])
@@ -336,27 +337,13 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
                         if t_row is not None:
                             await _create_age_edge(conn, subj_nid, cd.get("predicate", "relates_to")[:200], obj_nid)
                 else:
-                    log.warning("Embed returned None for claim %s — removing (gate invariant)", claim_id)
-                    await conn.execute("DELETE FROM claims WHERE id = $1", claim_id)
+                    log.warning("Embed returned None for claim %s — keeping as draft (TEI unavailable)", claim_id)
                     await conn.execute(
-                        "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
-                        "VALUES ($1, 'interview_embed_fail_delete', 'claim', $2, '{}'::jsonb)",
-                        state.employee_id, str(claim_id),
-                    )
-                    claims_created.pop()
-                    state.claims_this_session.pop()
-                    continue
+                        "UPDATE claims SET corroboration_level = 'draft' WHERE id = $1", claim_id)
             except Exception as exc:
-                log.warning("Embed failed for claim %s — removing (gate invariant): %r", claim_id, exc)
-                await conn.execute("DELETE FROM claims WHERE id = $1", claim_id)
+                log.warning("Embed failed for claim %s — keeping as draft: %r", claim_id, exc)
                 await conn.execute(
-                    "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
-                    "VALUES ($1, 'interview_embed_fail_delete', 'claim', $2, '{}'::jsonb)",
-                    state.employee_id, str(claim_id),
-                )
-                claims_created.pop()
-                state.claims_this_session.pop()
-                continue
+                    "UPDATE claims SET corroboration_level = 'draft' WHERE id = $1", claim_id)
 
             claim_value = criticality * novelty
             if novelty >= 0.5:
@@ -397,6 +384,29 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
 
     await save_state(conn, state)
 
+    message = None
+    if not converged and state.current_topic:
+        try:
+            recent = state.turn_texts[-3:]
+            extracted = [f"- {c}" for c in claims_created[:5]]
+            uncovered = [e["name"] for e in state.dossier_entities
+                         if e["name"] not in set(state.topics_covered)][:5]
+            q_system = (
+                "You are conducting a knowledge transfer interview about an employee's "
+                "tacit knowledge. Generate ONE short follow-up question. Be conversational "
+                "and specific. Do not repeat what was already covered."
+            )
+            q_user = (
+                f"Current topic: {state.current_topic}\n"
+                f"Recent employee responses:\n" + "\n".join(f"> {t[:200]}" for t in recent) + "\n"
+                f"Claims just extracted: {len(claims_created)}\n"
+                + (f"Still to cover: {', '.join(uncovered)}\n" if uncovered else "")
+                + "Generate the next interview question:"
+            )
+            message = await _llm_call(q_system, q_user, conn=conn)
+        except Exception as exc:
+            log.warning("Question generation failed: %r", exc)
+
     return {
         "turn": state.turn_count,
         "claims_created": claims_created,
@@ -404,6 +414,7 @@ async def conduct_turn(conn, state: InterviewState, user_text: str) -> dict:
         "converged": converged,
         "state": state.state,
         "topic": state.current_topic,
+        "message": message,
         "style_directive": get_style_directive(state),
     }
 

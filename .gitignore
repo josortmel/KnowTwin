@@ -18,6 +18,16 @@ frontend/.vite/
 media/
 backups/
 
+# Utility scripts with hardcoded credentials
+check_graph.py
+check_shapes.py
+
 # OS / editor
 .DS_Store
 Thumbs.db
+
+frontend/release/
+frontend/build/*.png
+frontend/build/*.ico
+*.exe
+*.blockmap

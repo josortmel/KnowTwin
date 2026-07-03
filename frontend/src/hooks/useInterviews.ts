@@ -19,7 +19,27 @@ interface RespondResult {
   converged: boolean;
   topic: string | null;
   state: string;
+  // LLM-generated follow-up question for the next turn (backend: /respond).
+  message?: string | null;
   coverage_pct: number | null;
+}
+
+// GET /projects/{id}/suggested-topics — VERIFIED (api/coverage.py:63). Returns
+// { project_id, topics: [...] } (entity_name, not `entity`), coverage gaps ordered
+// by criticality DESC then coverage ASC.
+export interface SuggestedTopic {
+  entity_name: string;
+  entity_type: string;
+  coverage_pct: number;
+  coverage_state: string;
+  criticality: number;
+}
+export function useSuggestedTopics(projectId: number) {
+  return useQuery<SuggestedTopic[]>({
+    queryKey: ["suggested-topics", projectId],
+    queryFn: async () => (await get<{ topics: SuggestedTopic[] }>(`/projects/${projectId}/suggested-topics?limit=10`)).topics ?? [],
+    enabled: projectId > 0,
+  });
 }
 
 export function useSessionList(projectId: number) {

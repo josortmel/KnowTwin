@@ -115,6 +115,71 @@ async def main():
             seeded += 1
         print(f"   {seeded} entities seeded")
 
+        # 2b. Seed LLM provider + cell configs (so Settings panel isn't empty)
+        print("\n2b. Seeding LLM provider + cell configs...")
+        import crypto
+        llm_key = os.environ.get("KNOWTWIN_LLM_KEY", "demo-key-not-real")
+        key_enc = crypto.encrypt(llm_key)
+        provider_name = "deepseek" if llm_key != "demo-key-not-real" else "demo"
+        model_name = "deepseek-v4-flash" if provider_name == "deepseek" else "gpt-4o-mini"
+        existing_provider = await conn.fetchval(
+            "SELECT id FROM llm_provider_keys WHERE provider = $1", provider_name
+        )
+        if existing_provider is None:
+            existing_provider = await conn.fetchval(
+                "INSERT INTO llm_provider_keys (provider, api_key_encrypted, model_default, display_name, added_by) "
+                "VALUES ($1, $2, $3, $4, $5) "
+                "ON CONFLICT DO NOTHING RETURNING id",
+                provider_name, key_enc, model_name,
+                f"{provider_name.title()} Provider", admin_id,
+            )
+            if existing_provider is None:
+                existing_provider = await conn.fetchval(
+                    "SELECT id FROM llm_provider_keys WHERE provider = $1", provider_name
+                )
+        default_agent_id = await conn.fetchval(
+            "SELECT id FROM agents WHERE identifier = 'default'"
+        )
+        if default_agent_id:
+            await conn.execute(
+                "ALTER TABLE cell_task_configs ADD COLUMN IF NOT EXISTS default_config JSONB")
+            await conn.execute(
+                "ALTER TABLE cell_task_configs ADD COLUMN IF NOT EXISTS default_prompt_content TEXT")
+            default_cfg = json.dumps({"model": model_name, "provider": provider_name, "enabled": True})
+            for cell_type in ("curator_pre", "curator_post", "verifier", "interviewer"):
+                await conn.execute(
+                    "INSERT INTO cell_task_configs (agent_id, cell_type, enabled, model, provider, config, default_config) "
+                    "VALUES ($1, $2, true, $3, $4, '{}'::jsonb, $5::jsonb) "
+                    "ON CONFLICT DO NOTHING",
+                    default_agent_id, cell_type, model_name, provider_name, default_cfg,
+                )
+            print(f"   provider={provider_name}, 4 cell configs for agent 'default'")
+        else:
+            print("   WARN: no 'default' agent found, skipping cell configs")
+
+        # 2c. Seed default prompt templates (upsert — single source in seed_prompts.py)
+        print("\n2c. Seeding default prompt templates...")
+        from seed_prompts import PROMPTS as _SEED_PROMPTS
+        templates_seeded = 0
+        for cell_type, tpl in _SEED_PROMPTS.items():
+            tpl_id = await conn.fetchval(
+                "INSERT INTO cell_prompt_templates (name, cell_type, content, is_default, created_by) "
+                "VALUES ($1, $2, $3, true, $4) "
+                "ON CONFLICT (name) DO UPDATE SET content = EXCLUDED.content, "
+                "cell_type = EXCLUDED.cell_type, updated_at = NOW() "
+                "RETURNING id",
+                tpl["name"], cell_type, tpl["content"], admin_id,
+            )
+            if tpl_id is not None and default_agent_id:
+                await conn.execute(
+                    "UPDATE cell_task_configs SET prompt_template_id = $1, "
+                    "default_prompt_content = $2 "
+                    "WHERE agent_id = $3 AND cell_type = $4",
+                    tpl_id, tpl["content"], default_agent_id, cell_type,
+                )
+            templates_seeded += 1
+        print(f"   {templates_seeded} prompt templates seeded")
+
         # 3. Insert documents + claims from canned extractions (simulates curator_pre)
         print("\n3. Seeding documents + canned claims...")
         _DOC_SOURCE_DATES = {
@@ -162,6 +227,38 @@ async def main():
                     )
                     doc_claim_count += 1
         print(f"   8 documents + {doc_claim_count} claims seeded")
+
+        # 3b. Seed document_chunks from .md files (worker pipeline bypassed by direct INSERT)
+        print("\n3b. Seeding document chunks...")
+        from chunker import _chunk_markdown
+        total_chunks = 0
+        for doc_file in _DOC_TRUST_HINTS:
+            md_path = DOCS_DIR / doc_file
+            if not md_path.exists():
+                print(f"   WARN: {doc_file} not found, skipping chunks")
+                continue
+            doc_text = md_path.read_text(encoding="utf-8")
+            doc_path = str(DOCS_DIR / doc_file)
+            doc_id = await conn.fetchval("SELECT id FROM documents WHERE uri = $1", doc_path)
+            if doc_id is None:
+                continue
+            existing = await conn.fetchval(
+                "SELECT count(*) FROM document_chunks WHERE document_id = $1", doc_id
+            )
+            if existing > 0:
+                continue
+            chunks = _chunk_markdown(doc_text)
+            for chunk in chunks:
+                await conn.execute(
+                    "INSERT INTO document_chunks"
+                    " (document_id, chunk_index, content, section_path, metadata, tags)"
+                    " VALUES ($1, $2, $3, $4, $5::jsonb, $6::text[])"
+                    " ON CONFLICT DO NOTHING",
+                    doc_id, chunk.chunk_index, chunk.content,
+                    chunk.section_path, json.dumps(chunk.metadata), ["demo_seed"],
+                )
+            total_chunks += len(chunks)
+        print(f"   {total_chunks} chunks seeded across {len(_DOC_TRUST_HINTS)} documents")
 
         # 4. Run scripted interview sessions
         print("\n4. Running scripted interview sessions...")

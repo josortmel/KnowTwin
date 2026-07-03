@@ -64,7 +64,8 @@ export function useGraphSearch(q: string) {
   return useQuery<GraphMatch[]>({
     queryKey: ["graph-search", q],
     queryFn: async () => (await get<GraphSearchResp>(`/graph/search?q=${encodeURIComponent(q)}&limit=10`)).matches,
-    enabled: q.trim().length > 0,
+    // Backend 422s on q shorter than 3 chars.
+    enabled: q.trim().length >= 3,
   });
 }
 

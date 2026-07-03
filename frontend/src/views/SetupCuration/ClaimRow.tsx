@@ -14,6 +14,7 @@ interface ClaimRowProps {
   onApprove: () => void;
   onAudit: () => void;
   approving?: boolean;
+  error?: string;
 }
 
 function ClockIcon() {
@@ -28,7 +29,7 @@ function ClockIcon() {
 // The Setup workhorse (DESIGN.md §3 / §7). subject·predicate·object (mono meta),
 // evidence (Hanken body via SafeText), the §7 badge vocabulary as dot+ink, a
 // select checkbox, and a per-row force-approve. ALL user/agent text via SafeText.
-export function ClaimRow({ claim, selected, onToggle, onApprove, onAudit, approving }: ClaimRowProps) {
+export function ClaimRow({ claim, selected, onToggle, onApprove, onAudit, approving, error }: ClaimRowProps) {
   const canApprove = claim.corroboration_level !== "validated" && claim.corroboration_level !== "rejected";
   const object = claim.object_entity ?? claim.object_value ?? "";
   return (
@@ -73,11 +74,26 @@ export function ClaimRow({ claim, selected, onToggle, onApprove, onAudit, approv
           </button>
           {canApprove && (
             <Button variant="primary" onClick={onApprove} loading={approving} className="px-3 py-1.5 text-[12px]">
-              Approve
+              Promote
             </Button>
           )}
         </div>
       </div>
+      {/* Promote rejection (409 cap / 422 embedding / …) stays pinned to the row —
+          §1.3: red dot + ink label, not red text fill. Server text via SafeText. */}
+      {error && (
+        <div
+          className="mt-2.5 flex items-start gap-2 rounded-md px-3 py-2"
+          role="alert"
+          style={{ background: "color-mix(in srgb, var(--red) 9%, transparent)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--red) 30%, transparent)" }}
+        >
+          <span className="mt-[3px] h-[7px] w-[7px] flex-none rounded-full" style={{ background: "var(--red)" }} />
+          <div>
+            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-2">Promotion rejected</div>
+            <SafeText text={error} as="p" className="mt-0.5 font-mono text-[11.5px] leading-snug text-ink-1" />
+          </div>
+        </div>
+      )}
     </GlassCard>
   );
 }

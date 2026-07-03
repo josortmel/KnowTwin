@@ -8,10 +8,7 @@ import asyncpg
 sys.path.insert(0, os.path.dirname(__file__))
 from embeddings_client import embed_text
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://knowtwin:knowtwin_test_pass@localhost:5436/knowtwin",
-)
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 
 async def main():

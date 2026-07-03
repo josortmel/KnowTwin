@@ -148,6 +148,9 @@ CREATE TABLE projects (
   workspace_id INT REFERENCES workspaces(id) ON DELETE CASCADE,
   name         TEXT NOT NULL,
   is_common    BOOLEAN DEFAULT false,
+  department   TEXT,
+  exit_date    DATE,
+  disposition  TEXT,
   created_at   TIMESTAMPTZ DEFAULT now(),
   UNIQUE (workspace_id, name)
 );
@@ -662,6 +665,8 @@ CREATE TABLE cell_task_configs (
   schedule_cron TEXT,
   level TEXT CHECK (level IS NULL OR level IN ('weekly','monthly','quarterly','yearly')),
   config JSONB NOT NULL DEFAULT '{}',
+  default_config JSONB,
+  default_prompt_content TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(agent_id, cell_type, level)

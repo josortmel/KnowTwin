@@ -1,13 +1,13 @@
 import { Badge } from "./Badge";
 
-// Coverage state (DESIGN.md §7.2) — entity knowledge completeness, dot + ink.
+// Knowledge completeness (§7.2) — per person/system/project, dot + ink. HR-facing.
 const MAP: Record<string, { color: string; label: string }> = {
-  unknown: { color: "var(--cov-unknown)", label: "Unknown" },
-  partial: { color: "var(--cov-partial)", label: "Partial" },
-  clear: { color: "var(--cov-clear)", label: "Clear" },
-  disputed: { color: "var(--cov-disputed)", label: "Disputed" },
-  validated: { color: "var(--cov-validated)", label: "Validated" },
-  stale: { color: "var(--cov-stale)", label: "Stale" },
+  unknown: { color: "var(--cov-unknown)", label: "Not captured" },
+  partial: { color: "var(--cov-partial)", label: "In progress" },
+  clear: { color: "var(--cov-clear)", label: "Captured" },
+  disputed: { color: "var(--cov-disputed)", label: "Contradiction" },
+  validated: { color: "var(--cov-validated)", label: "Verified" },
+  stale: { color: "var(--cov-stale)", label: "Needs refresh" },
 };
 
 export function CoverageStateBadge({ state, className = "" }: { state: string; className?: string }) {

@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import { type ComponentType, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
 // Per-section color legend (DESIGN.md §7.5). Each item carries its hue as the
@@ -6,6 +6,16 @@ import { NavLink } from "react-router-dom";
 // legend. `manager` (#D98C4A) is DEFERRED — not a route yet, intentionally absent.
 type IconProps = { width?: number; height?: number };
 
+function ProcessesIcon({ width = 17, height = 17 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} width={width} height={height}>
+      <circle cx="6" cy="6" r="2.3" />
+      <circle cx="6" cy="18" r="2.3" />
+      <circle cx="18" cy="12" r="2.3" />
+      <path d="M8.2 6.6l7 4.2M8.2 17.4l7-4.2" strokeLinecap="round" />
+    </svg>
+  );
+}
 function DashboardIcon({ width = 17, height = 17 }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} width={width} height={height}>
@@ -93,24 +103,31 @@ function SettingsIcon({ width = 17, height = 17 }: IconProps) {
 }
 
 type Section = { to: string; label: string; color: string; Icon: ComponentType<IconProps> };
-const GROUPS: { label: string; items: Section[] }[] = [
+// All views visible, grouped. HR Offboarding is the primary flow.
+const NAV_GROUPS: { label: string; items: Section[] }[] = [
   {
-    label: "Workspace",
+    label: "Offboarding",
+    items: [
+      { to: "/processes", label: "Processes", color: "var(--accent)", Icon: ProcessesIcon },
+      { to: "/setup", label: "Setup", color: "var(--sec-setup)", Icon: SetupIcon },
+      { to: "/interview", label: "Interviews", color: "var(--sec-interview)", Icon: InterviewIcon },
+      { to: "/twin", label: "Knowledge Assistant", color: "var(--sec-twin)", Icon: TwinIcon },
+      { to: "/decisions", label: "Decisions", color: "var(--sec-decisions)", Icon: DecisionsIcon },
+    ],
+  },
+  {
+    label: "Knowledge",
     items: [
       { to: "/dashboard", label: "Dashboard", color: "var(--sec-dashboard)", Icon: DashboardIcon },
       { to: "/explorer", label: "Explorer", color: "var(--sec-explorer)", Icon: ExplorerIcon },
-      { to: "/setup", label: "Setup", color: "var(--sec-setup)", Icon: SetupIcon },
-      { to: "/interview", label: "Interview", color: "var(--sec-interview)", Icon: InterviewIcon },
-      { to: "/twin", label: "Twin", color: "var(--sec-twin)", Icon: TwinIcon },
+      { to: "/graph", label: "Graph", color: "var(--sec-graph)", Icon: GraphIcon },
+      { to: "/ingestion", label: "Ingestion", color: "var(--sec-ingestion)", Icon: IngestionIcon },
     ],
   },
   {
     label: "Governance",
     items: [
-      { to: "/graph", label: "Graph", color: "var(--sec-graph)", Icon: GraphIcon },
       { to: "/ontology", label: "Ontology", color: "var(--sec-ontology)", Icon: OntologyIcon },
-      { to: "/ingestion", label: "Ingestion", color: "var(--sec-ingestion)", Icon: IngestionIcon },
-      { to: "/decisions", label: "Decisions", color: "var(--sec-decisions)", Icon: DecisionsIcon },
     ],
   },
 ];
@@ -141,6 +158,19 @@ function RowInner({ active, color, Icon, label }: { active: boolean; color: stri
   );
 }
 
+function NavItem({ to, label, color, Icon }: Section) {
+  return (
+    <NavLink
+      to={to}
+      data-testid={`nav-${label.toLowerCase().replace(/\s+/g, "-")}`}
+      className={({ isActive }) => `${ROW_BASE} ${isActive ? "font-semibold text-ink-1" : "text-ink-2 hover:text-ink-1"}`}
+      style={({ isActive }) => (isActive ? activeStyle : undefined)}
+    >
+      {({ isActive }) => <RowInner active={isActive} color={color} Icon={Icon} label={label} />}
+    </NavLink>
+  );
+}
+
 export function NavRail({ onOpenSettings, settingsOpen }: { onOpenSettings: () => void; settingsOpen: boolean }) {
   return (
     <nav
@@ -153,25 +183,14 @@ export function NavRail({ onOpenSettings, settingsOpen }: { onOpenSettings: () =
         boxShadow: "var(--tray-shadow)",
       }}
     >
-      {GROUPS.map((group, gi) => (
+      {NAV_GROUPS.map((group, gi) => (
         <div key={group.label} className={gi > 0 ? "mt-3" : undefined}>
           <div className="px-2.5 pb-1.5 pt-1 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-3">{group.label}</div>
-          {group.items.map(({ to, label, color, Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              data-testid={`nav-${label.toLowerCase()}`}
-              className={({ isActive }) => `${ROW_BASE} ${isActive ? "font-semibold text-ink-1" : "text-ink-2 hover:text-ink-1"}`}
-              style={({ isActive }) => (isActive ? activeStyle : undefined)}
-            >
-              {({ isActive }) => <RowInner active={isActive} color={color} Icon={Icon} label={label} />}
-            </NavLink>
-          ))}
+          {group.items.map((item) => <NavItem key={item.to} {...item} />)}
         </div>
       ))}
 
       <div className="flex-1" />
-      <div className="px-2.5 pb-1 pt-1 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-3">System</div>
 
       <button
         type="button"

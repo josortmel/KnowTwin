@@ -33,6 +33,7 @@ _ws_connections: dict[str, list[WebSocket]] = {}
 class SessionCreate(BaseModel):
     project_id: int = Field(..., gt=0)
     topic: str = Field(..., min_length=1, max_length=500)
+    employee_id: Optional[int] = Field(None, gt=0)
     planned_duration_min: int = Field(45, ge=5, le=240)
     comm_style: Optional[str] = Field(None, pattern="^(technical|relational)$")
 
@@ -54,6 +55,10 @@ async def create_session(
     async with pool.acquire() as conn:
         role = await check_access(conn, actor, body.project_id, "employee")
 
+        employee_id = int(actor["sub"])
+        if body.employee_id is not None and role in ("curator", "admin"):
+            employee_id = body.employee_id
+
         dossier_init = json.dumps({"comm_style": body.comm_style}) if body.comm_style else None
         row = await conn.fetchrow(
             """
@@ -61,7 +66,7 @@ async def create_session(
             VALUES ($1, $2, $3, $4, 'scheduled', $5::jsonb)
             RETURNING id, project_id, employee_id, topic, status, planned_duration_min, created_at
             """,
-            body.project_id, int(actor["sub"]), body.topic, body.planned_duration_min,
+            body.project_id, employee_id, body.topic, body.planned_duration_min,
             dossier_init,
         )
         return _session_dict(row)
@@ -207,6 +212,7 @@ async def respond(
             "converged": result["converged"],
             "topic": result.get("topic"),
             "state": result["state"],
+            "message": result.get("message"),
             "coverage_pct": coverage,
         }
 

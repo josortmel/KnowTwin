@@ -48,6 +48,11 @@ export function ChatInterface({ sessionId: _sid, onSendText, onSendVoice, messag
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto space-y-3 p-4">
+        {messages.length === 0 && !sending && (
+          <div className="grid h-full place-items-center px-6 text-center font-mono text-[12px] text-ink-3">
+            This session has no recorded content
+          </div>
+        )}
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div

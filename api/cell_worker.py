@@ -174,7 +174,7 @@ async def recover_stuck_runs(pool, timeout_min=60):
 # LLM calls
 # ---------------------------------------------------------------------------
 
-async def _llm_call(system_prompt: str, user_prompt: str) -> str:
+async def _llm_call(system_prompt: str, user_prompt: str, conn=None) -> str:
     _ctx = _active_cell.get()
     if _ctx and _ctx.get("key"):
         return await _llm_call_with_key(
@@ -182,6 +182,16 @@ async def _llm_call(system_prompt: str, user_prompt: str) -> str:
             _ctx.get("provider", "deepseek"),
             _ctx.get("model", CELL_MODEL),
             _ctx["key"])
+
+    if conn:
+        try:
+            _provider = os.environ.get("CELL_LLM_PROVIDER", "deepseek")
+            _key = await _get_provider_key(conn, _provider)
+            _model = os.environ.get("CELL_LLM_MODEL", CELL_MODEL)
+            return await _llm_call_with_key(
+                system_prompt, user_prompt, _provider, _model, _key)
+        except Exception as _db_err:
+            log.debug("DB provider key fallback failed: %r", _db_err)
 
     global _CELL_LLM
     if _CELL_LLM is None:
@@ -211,8 +221,9 @@ async def _llm_call_httpx(system_prompt: str, user_prompt: str) -> str:
         ],
         "temperature": 0.3,
         "max_tokens": CELL_LLM_MAX_TOKENS,
-        "response_format": {"type": "json_object"},
     }
+    if "json" in system_prompt.lower() or "json" in user_prompt.lower():
+        body["response_format"] = {"type": "json_object"}
     async with httpx.AsyncClient(timeout=CELL_LLM_TIMEOUT) as client:
         resp = await client.post(f"{_url}/v1/chat/completions", json=body, headers=headers)
         resp.raise_for_status()
@@ -298,8 +309,9 @@ async def _llm_call_with_key(system_prompt: str, user_prompt: str,
         ],
         "temperature": 0.3,
         "max_tokens": CELL_LLM_MAX_TOKENS,
-        "response_format": {"type": "json_object"},
     }
+    if "json" in system_prompt.lower() or "json" in user_prompt.lower():
+        body["response_format"] = {"type": "json_object"}
     async with httpx.AsyncClient(timeout=CELL_LLM_TIMEOUT) as client:
         resp = await client.post(f"{url}/v1/chat/completions", json=body, headers=headers)
         resp.raise_for_status()

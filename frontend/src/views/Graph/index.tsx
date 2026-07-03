@@ -15,7 +15,7 @@ import { useMe } from "../../hooks/useScore";
 import { useKnowledgeStats } from "../../hooks/useDashboard";
 import { useMergeEntities } from "../../hooks/useOntology";
 import { useGraphAll, useGraphSubgraph, useGraphSearch, useEntityClaims, type SubgraphResponse } from "../../hooks/useGraph";
-import { COV_STATES, FALLBACK, nodeRadius, endId, linkKey, TAU, type GNode, type GLink, type NodeId, type FgHandle } from "../../components/graph/graphTypes";
+import { COV_STATES, FALLBACK, nodeRadius, endId, linkKey, toRgba, TAU, type GNode, type GLink, type NodeId, type FgHandle } from "../../components/graph/graphTypes";
 import { drawNode } from "../../components/graph/drawNode";
 import { GraphContextMenu } from "../../components/graph/ContextMenu";
 import { MergeConfirmModal } from "../../components/graph/MergeConfirmModal";
@@ -49,6 +49,7 @@ export function GraphView() {
   const [depth, setDepth] = useState(2);
   const [full, setFull] = useState(true); // whole-graph until a default center resolves
   const [selected, setSelected] = useState<GNode | null>(null);
+  const [hoveredId, setHoveredId] = useState<NodeId | undefined>(undefined);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<NodeId>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: GNode | null } | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -185,6 +186,20 @@ export function GraphView() {
     return { nodes: [...nodeMap.values()], links };
   }, [baseData, extra]);
 
+  // Adjacency (node id → set of directly connected node ids) for the hover
+  // highlight. Rebuilt only when the edge set changes.
+  const adjacency = useMemo(() => {
+    const m = new Map<NodeId, Set<NodeId>>();
+    for (const l of data.links) {
+      const s = endId(l.source);
+      const t = endId(l.target);
+      (m.get(s) ?? m.set(s, new Set()).get(s)!).add(t);
+      (m.get(t) ?? m.set(t, new Set()).get(t)!).add(s);
+    }
+    return m;
+  }, [data.links]);
+  const connectedIds = useMemo(() => (hoveredId != null ? adjacency.get(hoveredId) : undefined), [adjacency, hoveredId]);
+
   // Apply tune forces + reheat on change / new dataset.
   useEffect(() => {
     const fg = fgRef.current;
@@ -200,8 +215,19 @@ export function GraphView() {
   const selId = selected?.id;
 
   const nodeCanvasObject = useCallback(
-    (n: object, ctx: CanvasRenderingContext2D, globalScale: number) => drawNode(n as GNode, ctx, globalScale, { palette, selectedIds, selId, nodeSize: tune.nodeSize, labelZoom: tune.labelZoom }),
-    [palette, selectedIds, selId, tune.nodeSize, tune.labelZoom],
+    (n: object, ctx: CanvasRenderingContext2D, globalScale: number) => drawNode(n as GNode, ctx, globalScale, { palette, selectedIds, selId, nodeSize: tune.nodeSize, labelZoom: tune.labelZoom, hoveredId, connectedIds }),
+    [palette, selectedIds, selId, tune.nodeSize, tune.labelZoom, hoveredId, connectedIds],
+  );
+
+  // Dim edges not incident to the hovered node so the neighborhood reads clearly.
+  const linkColor = useCallback(
+    (l: object) => {
+      if (hoveredId == null) return palette.edge;
+      const link = l as GLink;
+      const incident = endId(link.source) === hoveredId || endId(link.target) === hoveredId;
+      return incident ? palette.nodeHot : toRgba(palette.edge, 0.06);
+    },
+    [hoveredId, palette.edge, palette.nodeHot],
   );
 
   const nodePointerAreaPaint = useCallback(
@@ -424,12 +450,13 @@ export function GraphView() {
               if (ev?.shiftKey) toggleSelect((n as GNode).id);
               else recenter(n as GNode);
             }}
+            onNodeHover={(n: object | null) => setHoveredId(n ? (n as GNode).id : undefined)}
             onBackgroundClick={() => {
               setSelected(null);
               setContextMenu(null);
             }}
-            linkColor={() => palette.edge}
-            linkWidth={() => 0.6}
+            linkColor={linkColor}
+            linkWidth={(l: object) => (hoveredId != null && (endId((l as GLink).source) === hoveredId || endId((l as GLink).target) === hoveredId) ? 1.4 : 0.6)}
             nodePointerAreaPaint={nodePointerAreaPaint}
             nodeCanvasObject={nodeCanvasObject}
           />

@@ -262,6 +262,49 @@ async def update_config(
     return result
 
 
+@router.post("/{config_id}/reset")
+async def reset_config(
+    config_id: int = Path(..., ge=1),
+    actor: dict = Depends(get_current_user),
+) -> CellTaskConfig:
+    """Reset config + prompt to seeded defaults."""
+    if not actor.get("is_super"):
+        raise HTTPException(403, "cell config write requires super access")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, default_config, default_prompt_content, prompt_template_id "
+            "FROM cell_task_configs WHERE id = $1", config_id)
+        if row is None:
+            raise HTTPException(404, f"config {config_id} not found")
+        if row["default_config"] is None:
+            raise HTTPException(409, "no defaults stored for this config")
+
+        defaults = _parse_jsonb(row["default_config"])
+        set_parts = ["config = $1::jsonb", "updated_at = NOW()"]
+        params: list = [json.dumps(defaults)]
+        for k in ("model", "provider", "enabled"):
+            if k in defaults:
+                params.append(defaults[k])
+                set_parts.append(f"{k} = ${len(params)}")
+        params.append(config_id)
+        await conn.execute(
+            f"UPDATE cell_task_configs SET {', '.join(set_parts)} WHERE id = ${len(params)}",
+            *params)
+
+        if row["default_prompt_content"] and row["prompt_template_id"]:
+            await conn.execute(
+                "UPDATE cell_prompt_templates SET content = $1, updated_at = NOW() WHERE id = $2",
+                row["default_prompt_content"], row["prompt_template_id"])
+
+        await conn.execute(
+            "INSERT INTO audit_log (user_id, action, resource, resource_id, details) "
+            "VALUES ($1, 'reset_config', 'cell_task_config', $2::text, '{}'::jsonb)",
+            int(actor["sub"]), str(config_id))
+
+        return await _fetch_config(conn, config_id)
+
+
 @router.delete("/{config_id}", status_code=204)
 async def delete_config(
     config_id: int = Path(..., ge=1),

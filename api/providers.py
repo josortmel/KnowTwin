@@ -151,6 +151,23 @@ async def update_provider(
     return _to_summary(row)
 
 
+_PROVIDER_MODELS: dict[str, list[str]] = {
+    "deepseek": ["deepseek-chat", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-reasoner"],
+    "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
+    "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+}
+
+
+@router.get("/{provider}/models")
+async def list_provider_models(
+    provider: str = Path(..., min_length=1),
+    actor: dict = Depends(get_current_user),
+) -> dict:
+    _require_super(actor)
+    models = _PROVIDER_MODELS.get(provider, [])
+    return {"provider": provider, "models": models}
+
+
 @router.delete("/{provider_id}", status_code=204)
 async def delete_provider(
     provider_id: int = Path(..., ge=1),

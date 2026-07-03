@@ -22,6 +22,7 @@ Pendiente (deuda anotada):
 - VS9 → rate limiting (slowapi) antes de VPS.
 """
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, Response, WebSocket
@@ -107,6 +108,19 @@ async def lifespan(app: FastAPI):
         logging.getLogger("knowtwin.startup").warning(
             "entity_dictionary cache load failed at startup (extract_entities will run without overrides): %r", exc
         )
+
+    # Schema patches for existing DBs (init.sql handles fresh installs)
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as _mc:
+            await _mc.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS department TEXT")
+            await _mc.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS exit_date DATE")
+            await _mc.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS disposition TEXT")
+            await _mc.execute("ALTER TABLE cell_task_configs ADD COLUMN IF NOT EXISTS default_config JSONB")
+            await _mc.execute("ALTER TABLE cell_task_configs ADD COLUMN IF NOT EXISTS default_prompt_content TEXT")
+        _kt_log.info("Schema patches applied (idempotent)")
+    except Exception as _sp_exc:
+        _kt_log.warning("Schema patches failed: %r", _sp_exc)
 
     # LLM provider init (Adendum A)
     from llm_provider import init_llm_provider
@@ -241,7 +255,18 @@ def create_app(environment: str = None) -> FastAPI:
                 _embed_fail_logged_at["t"] = now
             embeddings_status = "degraded"
         llm_status = "off"
-        if settings.ECODB_LLM_PROVIDER != "off":
+        _has_env_key = bool(os.environ.get("CELL_LLM_KEY") or os.environ.get("DEEPSEEK_API_KEY"))
+        _has_db_key = False
+        try:
+            _pool = await get_pool()
+            async with _pool.acquire() as _hconn:
+                _has_db_key = bool(await _hconn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM llm_provider_keys)"))
+        except Exception:
+            pass
+        if _has_env_key or _has_db_key:
+            llm_status = "ok"
+        elif settings.ECODB_LLM_PROVIDER != "off":
             from llm_provider import get_llm_provider
             llm = get_llm_provider()
             if llm:

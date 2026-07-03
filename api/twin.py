@@ -318,8 +318,8 @@ async def _assemble_disputes(conn, claims: list[dict], project_id: int,
     return result
 
 
-def _format_answer(question: str, claims: list[dict], role: str = "admin") -> str:
-    """Format answer with mandatory citations. No LLM — deterministic for now."""
+def _format_answer_deterministic(question: str, claims: list[dict], role: str = "admin") -> str:
+    """Deterministic fallback — lists claims with citations."""
     if not claims:
         return "Insufficient information — no matching claims found for this question."
 
@@ -339,6 +339,42 @@ def _format_answer(question: str, claims: list[dict], role: str = "admin") -> st
         return "Insufficient information — no matching claims found for this question."
 
     return "Based on available claims:\n\n" + "\n".join(lines)
+
+
+async def _format_answer(question: str, claims: list[dict], role: str = "admin",
+                         conn=None) -> str:
+    """LLM-synthesized answer with [N] citations, deterministic fallback."""
+    fallback = _format_answer_deterministic(question, claims, role)
+    if not claims or conn is None:
+        return fallback
+
+    claims_text = []
+    for i, c in enumerate(claims, 1):
+        ev = render_evidence(role, c["evidence_text"], c.get("sanitized_text"))[:300]
+        dispute = " [DISPUTED]" if c["dispute_state"] == "disputed" else ""
+        if c["dispute_state"] == "resolved_against":
+            continue
+        claims_text.append(f"[{i}] {c['subject_entity']} — {c['predicate']}: {ev}{dispute}")
+
+    if not claims_text:
+        return fallback
+
+    try:
+        from cell_worker import _llm_call
+        system = (
+            "You are a knowledge twin answering questions based on verified organizational "
+            "knowledge claims. Cite sources using [N] notation matching the claim numbers "
+            "provided. Be concise and factual. If claims conflict, note the dispute."
+        )
+        user = (
+            f"Question: {question}\n\n"
+            f"Available claims:\n" + "\n".join(claims_text) + "\n\n"
+            "Provide a natural language answer with citations:"
+        )
+        return await _llm_call(system, user, conn=conn)
+    except Exception as exc:
+        log.warning("Twin LLM synthesis failed, using deterministic fallback: %r", exc)
+        return fallback
 
 
 @router.post("/query", response_model=TwinResponse)
@@ -408,7 +444,7 @@ async def twin_query(
         ]
 
         disputes = await _assemble_disputes(conn, all_claims, body.project_id, role)
-        answer = _format_answer(body.question, all_claims, role)
+        answer = await _format_answer(body.question, all_claims, role, conn=conn)
 
         return TwinResponse(
             answer=answer,

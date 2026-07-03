@@ -60,6 +60,38 @@ async def get_coverage(
         }
 
 
+@router.get("/projects/{project_id}/suggested-topics")
+async def suggested_topics(
+    project_id: int,
+    limit: int = Query(10, ge=1, le=50),
+    actor: dict = Depends(get_current_user),
+) -> dict:
+    """Suggest interview topics from coverage gaps, ordered by criticality."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await check_access(conn, actor, project_id, "curator")
+        rows = await conn.fetch("""
+            SELECT entity_name, entity_type, coverage_pct, coverage_state, expected_criticality
+            FROM entity_coverage
+            WHERE project_id = $1 AND coverage_state IN ('unknown', 'partial')
+            ORDER BY expected_criticality DESC, coverage_pct ASC
+            LIMIT $2
+        """, project_id, limit)
+        return {
+            "project_id": project_id,
+            "topics": [
+                {
+                    "entity_name": r["entity_name"],
+                    "entity_type": r["entity_type"],
+                    "coverage_pct": float(r["coverage_pct"]),
+                    "coverage_state": r["coverage_state"],
+                    "criticality": float(r["expected_criticality"]),
+                }
+                for r in rows
+            ],
+        }
+
+
 @router.get("/graph/entities")
 async def get_entities_with_coverage(
     project_id: int = Query(..., gt=0),

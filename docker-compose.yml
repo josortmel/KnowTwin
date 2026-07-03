@@ -38,6 +38,7 @@ services:
       # the minimal baseline; trigger_age_sync.sql is mounted at P1.2 (it needs
       # nodes/triples tables that don't exist yet).
       - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./seed:/seed:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U knowtwin -d knowtwin"]
       interval: 5s
@@ -59,8 +60,7 @@ services:
       MAX_TEXT_LEN: "32000"
     # Internal-only — no host port (reached as http://knowtwin-tei:8090 on knowtwin-net).
     volumes:
-      # :ro — trust_remote_code=True could otherwise write to the host HF cache.
-      - ${HF_CACHE_PATH:-hf_cache}:/cache/huggingface:ro
+      - ${HF_CACHE_PATH:-hf_cache}:/cache/huggingface
       - torch_cache:/cache/torch
     deploy:
       resources:
@@ -120,12 +120,10 @@ services:
       API_KEY_PEPPER: ${KNOWTWIN_API_KEY_PEPPER:-dev_only_change_me_pepper}
       CORS_ORIGINS: ${KNOWTWIN_CORS_ORIGINS:-http://localhost:8090,http://localhost:3001}
       NER_SERVICE_URL: http://knowtwin-ner:8091
-      # LLM off for P1.1 — no llama/cell provider wired yet (keeps boot self-contained).
-      ECODB_LLM_PROVIDER: "off"
       ENCRYPTION_KEY: ${KNOWTWIN_ENCRYPTION_KEY}
       INTERNAL_BROADCAST_SECRET: ${KNOWTWIN_INTERNAL_BROADCAST_SECRET:-}
     ports:
-      - "8090:8080"
+      - "127.0.0.1:8090:8080"
     depends_on:
       # DECOUPLED from tei (deferred GPU boot). api boots without embeddings;
       # /health soft-checks tei and still returns 200 when it's down.
@@ -146,7 +144,10 @@ services:
       - knowtwin-net
 
   knowtwin-frontend:
-    # P1.18: Vite dev server for React SPA. Production = nginx + build output.
+    # P1.18: Vite dev server for React SPA. Electron is the default dev mode
+    # (cd frontend && npm run dev). Use --profile web to start this container.
+    profiles:
+      - web
     image: node:22-slim
     container_name: knowtwin-frontend
     working_dir: /app
@@ -155,7 +156,7 @@ services:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
       interval: 15s

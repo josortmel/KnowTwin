@@ -18,28 +18,45 @@ export interface BatchResult {
   failed?: BatchFailure[];
 }
 
+const APPROVE_NEXT: Record<string, string> = {
+  draft: "single_source",
+  single_source: "corroborated",
+  corroborated: "corroborated_by_employee",
+  corroborated_by_employee: "validated",
+};
+
 export function useBatch() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ ids, action, value }: { ids: string[]; action: BatchAction; value?: string }) =>
       put<BatchResult>("/claims/batch", { ids, action, ...(value != null ? { value } : {}) }),
-    // Optimistic: reflect approve/reject on the affected rows immediately;
-    // roll back on any error (incl. 409/403), then revalidate.
     onMutate: async ({ ids, action }) => {
       await qc.cancelQueries({ queryKey: ["claims"] });
+      await qc.cancelQueries({ queryKey: ["claims-filtered"] });
       const prev = qc.getQueriesData<Claim[]>({ queryKey: ["claims"] });
+      const prevFiltered = qc.getQueriesData<Claim[]>({ queryKey: ["claims-filtered"] });
       if (action === "approve" || action === "reject") {
-        const level = action === "approve" ? "validated" : "rejected";
         const idSet = new Set(ids);
-        qc.setQueriesData<Claim[]>({ queryKey: ["claims"] }, (old) =>
-          old?.map((c) => (idSet.has(c.id) ? { ...c, corroboration_level: level } : c)),
-        );
+        const updater = (old: Claim[] | undefined) =>
+          old?.map((c) => {
+            if (!idSet.has(c.id)) return c;
+            const level = action === "reject" ? "rejected" : (APPROVE_NEXT[c.corroboration_level] ?? c.corroboration_level);
+            return { ...c, corroboration_level: level };
+          });
+        qc.setQueriesData<Claim[]>({ queryKey: ["claims"] }, updater);
+        qc.setQueriesData<Claim[]>({ queryKey: ["claims-filtered"] }, updater);
       }
-      return { prev };
+      return { prev, prevFiltered };
     },
     onError: (_e, _v, ctx) => {
       ctx?.prev?.forEach(([key, data]) => qc.setQueryData(key, data));
+      ctx?.prevFiltered?.forEach(([key, data]) => qc.setQueryData(key, data));
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["claims"] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["claims"] });
+      qc.invalidateQueries({ queryKey: ["claims-filtered"] });
+      qc.invalidateQueries({ queryKey: ["graph-totals"] });
+      qc.invalidateQueries({ queryKey: ["knowledge-stats"] });
+    },
   });
 }

@@ -418,3 +418,127 @@
   pero todo lo demás del dashboard es project-scoped (project_id=1) y Explorer usa
   /claims?project_id=1 (17). Inconsistencia visible. Pendiente decisión de Pepe/Lienzo
   sobre qué count mostrar (no lo cambio unilateralmente — es semántico).
+
+## Sesión bug-fixes (Pepe test session) + UPDATE #27, 2026-07-03
+
+### 1. FIX-30 Graph hover — verificación con canvas (sin bug de código)
+- **Reto:** react-force-graph pinta en canvas; hover se verifica con ratón REAL.
+- eventos MouseEvent sintéticos dispatchados NO disparan el hover de react-force-graph
+  (usa su propio tracking de puntero). Solución: `page.mouse.move` (Playwright real) +
+  localizar el nodo escaneando píxeles del canvas por color (centroide por celda, no
+  centroide global — global cae entre nodos del mismo color y falla el hit-test).
+- Implementación: onNodeHover→hoveredId, adjacency Map desde data.links (useMemo),
+  drawNode dim alpha 0.15 a no-vecinos + label forzado a vecinos + ring extra al hovered,
+  linkColor atenúa aristas no incidentes.
+
+### 2. UPDATE #27 — el brief relay chocaba con el backend real (4 deltas)
+- **Regla reforzada:** verificar SIEMPRE contra el source Python del backend antes de
+  implementar un brief, aunque venga "confirmado por Hilo". El brief decía `name`,
+  `api_key_hint`, `base_url`, `provider_id` — el backend (api/providers.py,
+  api/cell_configs.py con extra="forbid") usa `provider`, `api_key_masked`, SIN base_url
+  (lo rechaza 422), y cells usan `provider` (nombre) + `agent_identifier` REQUERIDO.
+  Reporté los deltas a Lienzo antes de codificar; Hilo confirmó agent_identifier="default".
+- /providers/{name}/models devuelve `{provider, models}`, no `string[]` pelado — unwrap .models.
+
+### 3. Falso bug: refresh in-place no funcionaba con mock SÍNCRONO
+- **Síntoma:** tras POST provider, el listado no refrescaba (rows=0) pese a que el
+  refetch GET SÍ se disparaba y el cache de React Query tenía data=2, observers=1, success.
+- **Causa real:** el mock de test resolvía `Promise.resolve(...)` en el MISMO microtask.
+  Eso confunde el batching/notify de React Query en dev+StrictMode → el observer no
+  re-renderiza. NO es bug de código.
+- **Prueba:** con mock async (`setTimeout 40ms`, latencia tipo IPC real) el refresh
+  funciona perfecto (rows [1,1,1,1,1]). El bridge Electron real es async → correcto.
+- **Regla:** los mocks del bridge deben tener latencia (setTimeout) para reproducir el
+  comportamiento real de React Query. Un mock síncrono da falsos negativos de refresh.
+- **Diagnóstico útil:** inspeccionar el cache de React Query vía fiber walk desde #root
+  (`memoizedProps.client.getQueryCache().getAll()`) para ver status/data/observers reales.
+
+### 4. Interview `message` (LLM) no se renderizaba
+- /respond devuelve `message` (pregunta LLM del entrevistador) pero RespondResult no lo
+  tipaba y InterviewView solo mostraba "Extracted N claims". Añadido `message?` al tipo +
+  handleSendText/handleSendVoice usan `result.message` como texto del system message
+  (fallback al status line). Twin `answer` en Explorer YA se renderizaba (TwinAnswer+SafeText).
+
+## TASK #29 — Twin UX redesign (conversación), 2026-07-03
+
+### 1. DELTA de contrato: /twin/query NO acepta empleado
+- El brief pedía "selected employee determines the context for twin queries" pero el
+  backend TwinQuery (api/twin.py:31) solo acepta `{question, project_id}` — SIN param de
+  empleado. El selector de empleado es FRAMING/contexto presentacional (§7.6), NO filtra
+  server-side. Implementado como framing per spec explícito de Lienzo (body {question,
+  project_id:1}); anotado a Lienzo para que nadie asuma que filtra.
+- Al cambiar de empleado se resetea el hilo de conversación (contexto nuevo).
+
+### 2. Archivos huérfanos tras replace
+- TwinView reescrito entero → TwinChat.tsx, SourcePanel.tsx, DisputePanel.tsx quedan
+  sin usar (solo los referenciaba el TwinView viejo). tsc NO los marca (unused files no
+  dan error). NO los borré (regla: no borrar código no relacionado sin permiso) — flagged
+  a Lienzo para que decida. CoverageOverview SÍ se reusa.
+
+### 3. #27 C1 — mi propia violación §1.3
+- El texto de validación de slug usaba `style={{color:"var(--red)"}}` — texto de color
+  a <18px falla contraste WCAG (§1.3). Corregido a `text-ink-3` + borde rojo en el input
+  (inset box-shadow var(--red)) como señal, mismo patrón que NoteInput de #31. Regla: el
+  ESTADO va en borde/tint/dot, nunca en el color del texto pequeño.
+
+## Batch 5 tasks (#32/#35/#34/#33/#36), 2026-07-03
+
+### 1. BUILD ROJO por edición no-atómica (mi peor error del batch)
+- Al añadir #33 templates edité los IMPORTS primero (antes de escribir los
+  consumidores). Estado intermedio: imports "unused" → un linter los auto-removió Y
+  un build ajeno (Lienzo/adversarial) corrió tsc en ese instante → exit 2. Luego el
+  linter dejó los consumidores referenciando símbolos no importados → segundo roto.
+- FIX definitivo: cambios multi-ubicación (imports + componentes + uso) = UN SOLO
+  Write del archivo completo. Build verde ANTES de reportar. Nunca dejar código
+  parcial en disco.
+- REGLA (Lienzo): el build debe estar VERDE EN TODO MOMENTO. Otros agentes corren tsc
+  continuamente; una ventana roja de segundos los rompe.
+
+### 2. HMR stale de Vite tras el build roto
+- Tras arreglar el archivo, el dev server seguía lanzando "TemplatesSection is not
+  defined" en runtime AUNQUE tsc pasaba. Era un módulo HMR cacheado del estado roto.
+  Fix: navigate full-reload (no basta con cambiar de tab). Lección: si tsc pasa pero el
+  browser da ReferenceError de algo que SÍ existe, es HMR stale → reload duro.
+
+### 3. Deltas de contrato (verificar SIEMPRE el source Python)
+- #34 suggested-topics: devuelve {project_id, topics:[{entity_name,...}]} — entity_name
+  (no `entity`), envuelto en {topics}.
+- #36 History: /claims dispute_state es filtro de valor ÚNICO → 2 queries (favor+against)
+  merge. Y ClaimResponse NO expone resolution_note/resolved_by/resolved_at (solo
+  dispute_state+updated_at). No inventé campos; flageé a Lienzo/Hilo.
+- #32: con force=true el backend SALTA niveles (no adjacente), único constraint
+  interview+validated→409. nextLevel por cap de fuente evita el 409.
+
+### 4. Refresh de mutación: mock SÍNCRONO da falso negativo (repetido)
+- El refresh in-place tras add/delete/reverse SOLO funciona con mock async (setTimeout).
+  Mock síncrono (Promise.resolve mismo microtask) rompe el notify de React Query en
+  dev+StrictMode. Todos los tests del batch usaron latencia ~40ms → refresh correcto.
+
+## #37 + #38 (Agent Config v2 + Processes/HR), 2026-07-03
+
+### 1. Relay de contratos ADELANTADO al source real (verificar siempre el .py)
+- Lienzo relayó "next-steps → [{action, priority, gaps?}]" pero el source (api/projects.py:471)
+  devuelve {steps:[{action, label}]} — sin priority/gaps (los gaps van en el label string).
+  Hilo SÍ había pusheado OTRAS cosas (status +open_disputes, OffboardingCreate +department/
+  exit_date/disposition, ProjectResponse +employee_name) → el relay mezclaba lo real con lo
+  aspiracional. Regla: cada delta de contrato se verifica en el source ANTES de codificar,
+  aunque el relay diga "confirmado por Hilo".
+
+### 2. Campos de formulario que NO persisten
+- El wizard #38 pide reporting_manager/replacement_name/priority pero OffboardingCreate no
+  los tiene. Como el modelo NO es extra=forbid, pydantic los IGNORA silenciosamente (no 422).
+  Los envío igual (no rompe) pero flageé a Lienzo que no se guardan hasta que Hilo añada
+  columnas. No colecciono datos que desaparecen sin avisar.
+
+### 3. Vocab rename HR: hacerlo en los BADGES centrales, no string a string
+- El rename user-facing (Claims→Knowledge items, Disputed→Contradiction, etc.) se hace UNA
+  vez en los 3 badges (CorroborationBadge/DisputeBadge/CoverageStateBadge) y se propaga a
+  TODAS las vistas. Los códigos (single_source, disputed…) siguen igual en el wire — solo
+  cambia el label. Mucho más eficiente que editar cada heading. El sweep profundo de headings/
+  tooltips individuales queda como pasada dedicada si se pide.
+
+### 4. #37 reset: el config trae prompt_template_id
+- El CellConfig del backend incluye prompt_template_id → asociación directa card↔template
+  (mejor que matchear por cell_type). POST /cells/configs/{id}/reset resetea config + prompt.
+  El card remonta via key con updated_at para reflejar el reset (refresh in-place depende del
+  refetch, mismo timing React Query ya conocido; con backend async real refresca).

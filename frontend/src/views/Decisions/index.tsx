@@ -3,23 +3,26 @@ import { GlassCard } from "../../components/GlassCard";
 import { PanelState } from "../../components/Panel";
 import { Button } from "../../components/Button";
 import { SafeText } from "../../components/SafeText";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { DisputeBadge } from "../../components/DisputeBadge";
 import { pushToast } from "../../lib/toast";
 import { useAttentionSummary } from "../../hooks/useDashboard";
 import { useInboxDetails, useUpdateStaleness, type InboxItem, type Staleness } from "../../hooks/useDecisions";
 import { useResolveDispute, useAssignResolver, type Resolution } from "../../hooks/useDisputes";
 import { useReviewDeletion } from "../../hooks/useDeletions";
 import { useReviewAlias } from "../../hooks/useOntology";
+import { useResolvedClaims, useReverseDispute, type Claim } from "../../hooks/useClaims";
 
 const LIMIT = 20;
 const ACCENT = "var(--sec-decisions)";
 
 // Urgency order (Lienzo): disputes → deletions (GDPR) → the rest.
 const CLASSES: { key: string; label: string }[] = [
-  { key: "pending_disputes", label: "Disputes" },
+  { key: "pending_disputes", label: "Contradictions" },
   { key: "pending_deletions", label: "Deletions" },
   { key: "low_trust_documents", label: "Low trust" },
-  { key: "stale_claims", label: "Stale claims" },
-  { key: "pending_alias_candidates", label: "Aliases" },
+  { key: "stale_claims", label: "Stale knowledge" },
+  { key: "pending_alias_candidates", label: "Duplicates" },
   { key: "unconfirmed_relations", label: "Relations" },
 ];
 
@@ -111,15 +114,16 @@ function WhyBox({ text }: { text: string }) {
   );
 }
 
-function NoteInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function NoteInput({ value, onChange, placeholder = "Resolution note (optional)…", invalid = false }: { value: string; onChange: (v: string) => void; placeholder?: string; invalid?: boolean }) {
   return (
     <textarea
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      placeholder="Resolution note (optional)…"
+      placeholder={placeholder}
       rows={2}
+      aria-invalid={invalid}
       className="w-full resize-none rounded-md px-2.5 py-2 font-mono text-[11.5px] text-ink-1 outline-none"
-      style={{ background: "var(--field-bg)", boxShadow: "inset 0 0 0 1px var(--card-hairline)" }}
+      style={{ background: "var(--field-bg)", boxShadow: invalid ? "inset 0 0 0 1px var(--red)" : "inset 0 0 0 1px var(--card-hairline)" }}
     />
   );
 }
@@ -128,6 +132,8 @@ function NoteInput({ value, onChange }: { value: string; onChange: (v: string) =
 function DisputeDetail({ item, acting, onResolve, onAssign }: { item: InboxItem; acting: boolean; onResolve: (id: string, r: Resolution, note: string) => void; onAssign: (id: string, uid: number) => void }) {
   const [note, setNote] = useState("");
   const [resolver, setResolver] = useState("");
+  // Backend requires resolution_note (min 1 char) → gate the resolve actions on it.
+  const noteEmpty = note.trim().length === 0;
   return (
     <div className="flex h-full flex-col">
       <DetailHead label={`Disputed · ${item.dispute_state ?? ""}`} />
@@ -143,12 +149,13 @@ function DisputeDetail({ item, acting, onResolve, onAssign }: { item: InboxItem;
       </div>
       <div className="flex-1" />
       <div className="mt-4 flex flex-col gap-2.5">
-        <NoteInput value={note} onChange={setNote} />
+        <NoteInput value={note} onChange={setNote} placeholder="Resolution note (required) — explain your call…" invalid={noteEmpty} />
+        {noteEmpty && <div className="font-mono text-[10px] text-ink-3">A resolution note is required before you can resolve this dispute.</div>}
         <div className="flex gap-2.5">
-          <Button variant="primary" disabled={acting} onClick={() => onResolve(item.id, "in_favor", note)} className="flex-1 py-2.5 text-[12.5px]">
+          <Button variant="primary" disabled={acting || noteEmpty} onClick={() => onResolve(item.id, "in_favor", note.trim())} className="flex-1 py-2.5 text-[12.5px]">
             Resolve in favor
           </Button>
-          <Button variant="default" disabled={acting} onClick={() => onResolve(item.id, "against", note)} className="flex-1 py-2.5 text-[12.5px]">
+          <Button variant="default" disabled={acting || noteEmpty} onClick={() => onResolve(item.id, "against", note.trim())} className="flex-1 py-2.5 text-[12.5px]">
             Resolve against
           </Button>
         </div>
@@ -316,6 +323,65 @@ function DisabledDetail({ item, decisionClass, label }: { item: InboxItem; decis
   );
 }
 
+// ── History (resolved disputes) ───────────────────────────────────────────────
+// NOTE: /claims (api/claims.py ClaimResponse) does NOT return resolution_note,
+// resolved_by or resolved_at — only dispute_state + updated_at. We show what the
+// contract exposes; updated_at is used as the resolution timestamp.
+function HistoryPanel() {
+  const resolved = useResolvedClaims(1);
+  const reverse = useReverseDispute();
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const items = resolved.data ?? [];
+
+  const onReverse = (id: string) =>
+    reverse.mutate(id, {
+      onSuccess: () => pushToast("Dispute reopened", { tone: "success" }),
+      onError: (e) => pushToast(e instanceof Error ? e.message : "Reverse failed", { tone: "error" }),
+    });
+
+  return (
+    <GlassCard className="flex max-h-[calc(100vh-220px)] flex-col p-2">
+      <PanelState loading={resolved.isPending} error={resolved.isError} onRetry={() => void resolved.refetch()} empty={!resolved.isPending && items.length === 0} emptyLabel="No resolved disputes yet">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {items.map((c: Claim) => {
+            const object = c.object_entity ?? c.object_value ?? "";
+            return (
+              <div key={c.id} className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-[var(--card-hairline)] px-3 py-3 last:border-0">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    <SafeText text={c.subject_entity} className="font-mono text-[12px] text-ink-1" />
+                    <span className="font-mono text-[11px] text-ink-3">·</span>
+                    <SafeText text={c.predicate} className="font-mono text-[12px] text-ink-2" />
+                    {object && (<><span className="font-mono text-[11px] text-ink-3">·</span><SafeText text={object} className="font-mono text-[12px] text-ink-2" /></>)}
+                  </div>
+                  <SafeText text={c.evidence_text} as="p" className="mt-1.5 line-clamp-2 font-body text-[12.5px] leading-relaxed text-ink-1" />
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[10px] text-ink-3">
+                    <DisputeBadge state={c.dispute_state} />
+                    <span>·</span>
+                    <span>resolved {(c.updated_at ?? c.created_at).slice(0, 10)}</span>
+                  </div>
+                </div>
+                <Button variant="default" disabled={reverse.isPending} onClick={() => setConfirmId(c.id)} className="flex-none px-3 py-1.5 text-[11.5px]">
+                  Reverse
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </PanelState>
+
+      <ConfirmDialog
+        open={!!confirmId}
+        title="Reopen this dispute?"
+        message="This moves the claim back to 'disputed' and returns it to the dispute queue for a fresh decision."
+        confirmLabel="Reopen"
+        onConfirm={() => { if (confirmId) onReverse(confirmId); setConfirmId(null); }}
+        onCancel={() => setConfirmId(null)}
+      />
+    </GlassCard>
+  );
+}
+
 // ── Decisions Inbox ───────────────────────────────────────────────────────────
 export function DecisionsView() {
   const summary = useAttentionSummary();
@@ -324,12 +390,13 @@ export function DecisionsView() {
   const review = useReviewDeletion();
   const staleness = useUpdateStaleness();
   const alias = useReviewAlias();
+  const history = useResolvedClaims(1); // for the History tab count (shared cache)
 
   const [decisionClass, setDecisionClass] = useState("pending_disputes");
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const details = useInboxDetails(decisionClass, LIMIT, offset, true);
+  const details = useInboxDetails(decisionClass, LIMIT, offset, decisionClass !== "history");
   const items = details.data?.items ?? [];
   const total = details.data?.total ?? 0;
   const selected = items.find((i) => i.id === selectedId) ?? items[0] ?? null;
@@ -368,16 +435,19 @@ export function DecisionsView() {
     <>
       <div className="mb-[18px] mt-1.5 px-0.5">
         <h1 className="font-mono text-[19px] font-medium tracking-[0.01em] text-ink-1">Decisions</h1>
-        <p className="mt-1.5 text-[12.5px] text-ink-3">Everything that needs a call — disputes, deletions, aliases, and stale claims.</p>
+        <p className="mt-1.5 text-[12.5px] text-ink-3">Everything that needs a call — contradictions, deletions, duplicates, and stale knowledge.</p>
       </div>
 
       <div role="tablist" className="mb-4 flex flex-wrap gap-2">
         {CLASSES.map((c) => (
           <ClassTab key={c.key} active={decisionClass === c.key} label={c.label} count={summary.data?.classes?.[c.key] ?? 0} onClick={() => pick(c.key)} />
         ))}
+        <ClassTab active={decisionClass === "history"} label="History" count={history.data?.length ?? 0} onClick={() => pick("history")} />
       </div>
 
-      {is403 ? (
+      {decisionClass === "history" ? (
+        <HistoryPanel />
+      ) : is403 ? (
         <GlassCard className="p-[18px]">
           <div className="grid place-items-center py-16 font-mono text-[12.5px] text-ink-3">This inbox is limited to curators and admins.</div>
         </GlassCard>

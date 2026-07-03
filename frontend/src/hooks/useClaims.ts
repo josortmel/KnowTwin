@@ -16,6 +16,7 @@ export interface Claim {
   confidence?: number;
   criticality: number;
   created_at: string;
+  updated_at?: string;
 }
 
 // GET /claims returns a page: { items, total, limit, offset } — NOT a bare
@@ -33,6 +34,23 @@ export function useClaims(projectId: number) {
     queryFn: async () => {
       const page = await get<ClaimsPage>(`/claims?project_id=${projectId}`);
       return page.items;
+    },
+    enabled: projectId > 0,
+  });
+}
+
+// Resolved disputes for the Decisions History tab. /claims dispute_state is a
+// single-value exact filter (api/claims.py:399), so fetch both resolved states
+// and merge, newest-updated first.
+export function useResolvedClaims(projectId: number) {
+  return useQuery<Claim[]>({
+    queryKey: ["claims", "resolved", projectId],
+    queryFn: async () => {
+      const [forr, against] = await Promise.all([
+        get<ClaimsPage>(`/claims?project_id=${projectId}&dispute_state=resolved_in_favor&limit=100`),
+        get<ClaimsPage>(`/claims?project_id=${projectId}&dispute_state=resolved_against&limit=100`),
+      ]);
+      return [...forr.items, ...against.items].sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
     },
     enabled: projectId > 0,
   });
@@ -78,22 +96,24 @@ export function usePromoteClaim() {
   return useMutation({
     mutationFn: ({ claimId, newLevel, force }: { claimId: string; newLevel: string; force?: boolean }) =>
       put(`/claims/${claimId}/promote`, { new_level: newLevel, ...(force ? { force: true } : {}) }),
-    // Optimistic promote; roll back on any error (incl. the interview-cap 409),
-    // then revalidate against the server.
     onMutate: async ({ claimId, newLevel }) => {
       await qc.cancelQueries({ queryKey: ["claims"] });
+      await qc.cancelQueries({ queryKey: ["claims-filtered"] });
       const prev = qc.getQueriesData<Claim[]>({ queryKey: ["claims"] });
-      qc.setQueriesData<Claim[]>({ queryKey: ["claims"] }, (old) =>
-        old?.map((c) => (c.id === claimId ? { ...c, corroboration_level: newLevel } : c)),
-      );
-      return { prev };
+      const prevFiltered = qc.getQueriesData<Claim[]>({ queryKey: ["claims-filtered"] });
+      const updater = (old: Claim[] | undefined) =>
+        old?.map((c) => (c.id === claimId ? { ...c, corroboration_level: newLevel } : c));
+      qc.setQueriesData<Claim[]>({ queryKey: ["claims"] }, updater);
+      qc.setQueriesData<Claim[]>({ queryKey: ["claims-filtered"] }, updater);
+      return { prev, prevFiltered };
     },
     onError: (_e, _v, ctx) => {
       ctx?.prev?.forEach(([key, data]) => qc.setQueryData(key, data));
+      ctx?.prevFiltered?.forEach(([key, data]) => qc.setQueryData(key, data));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["claims"] });
-      // Promotion can create triples (Hilo) → refresh graph totals + knowledge health.
+      qc.invalidateQueries({ queryKey: ["claims-filtered"] });
       qc.invalidateQueries({ queryKey: ["graph-totals"] });
       qc.invalidateQueries({ queryKey: ["knowledge-stats"] });
     },
@@ -107,6 +127,7 @@ export function useUpdateClaim() {
       put(`/claims/${claimId}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["claims"] });
+      qc.invalidateQueries({ queryKey: ["claims-filtered"] });
       qc.invalidateQueries({ queryKey: ["coverage"] });
     },
   });
@@ -116,6 +137,23 @@ export function useDeleteClaim() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (claimId: string) => del(`/claims/${claimId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["claims"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["claims"] });
+      qc.invalidateQueries({ queryKey: ["claims-filtered"] });
+    },
+  });
+}
+
+// Reopen a resolved dispute (History → Reverse). Sets dispute_state back to
+// "disputed" so it returns to the Decisions dispute queue.
+export function useReverseDispute() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (claimId: string) => put(`/claims/${claimId}`, { dispute_state: "disputed" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["claims"] });
+      qc.invalidateQueries({ queryKey: ["inbox-details"] });
+      qc.invalidateQueries({ queryKey: ["attention-summary"] });
+    },
   });
 }

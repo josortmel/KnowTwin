@@ -65,7 +65,7 @@ class DisputeListResponse(BaseModel):
 
 class ResolveBody(BaseModel):
     resolution: str = Field(..., pattern="^(in_favor|against)$")
-    resolution_note: str = Field(..., min_length=1, max_length=2000)
+    resolution_note: Optional[str] = Field(None, max_length=2000)
 
 
 class AssignResolverBody(BaseModel):
@@ -234,7 +234,7 @@ async def resolve_dispute(
     actor: dict = Depends(get_current_user),
 ):
     """Resolve a disputed claim. Curator/admin/assigned-resolver only."""
-    if "\x00" in body.resolution_note:
+    if body.resolution_note and "\x00" in body.resolution_note:
         raise HTTPException(422, "null bytes not allowed in resolution_note")
 
     pool = await get_pool()

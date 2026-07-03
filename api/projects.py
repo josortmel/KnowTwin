@@ -79,6 +79,22 @@ class ProjectCreate(BaseModel):
         return validate_name_strip_blank(v, "name")
 
 
+class OffboardingCreate(BaseModel):
+    """Convenience model for POST /projects (flat, no workspace_id needed)."""
+    name: str = Field(..., min_length=1, max_length=MAX_NAME_LEN)
+    employee_name: str | None = None
+    role: str | None = None
+    department: str | None = Field(None, max_length=200)
+    exit_date: str | None = Field(None, max_length=10)
+    accounts: list[str] | None = None
+    disposition: str | None = Field(None, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def _v_name(cls, v: str) -> str:
+        return validate_name_strip_blank(v, "name")
+
+
 class ProjectUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -99,6 +115,11 @@ class ProjectResponse(BaseModel):
     workspace_id: int
     name: str
     is_common: bool
+    department: str | None = None
+    exit_date: str | None = None
+    disposition: str | None = None
+    employee_name: str | None = None
+    employee_id: int | None = None
     created_at: datetime
 
 
@@ -176,6 +197,67 @@ async def create_project(
             VALUES ($1, 'create_project', 'project', $2, $3::jsonb, $4)""",
             int(actor["sub"]), str(row["id"]),
             json.dumps({"workspace_id": workspace_id, "name": body.name, "is_common": body.is_common}),
+            actor.get("organization_id"),
+        )
+
+    return ProjectResponse(**dict(row))
+
+
+@router.post("/projects", response_model=ProjectResponse, status_code=201)
+async def create_project_flat(
+    body: OffboardingCreate,
+    actor: dict = Depends(get_current_user),
+) -> ProjectResponse:
+    """Convenience endpoint: resolve workspace automatically (single-tenant)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        workspace_id = await conn.fetchval("SELECT id FROM workspaces ORDER BY id LIMIT 1")
+        if workspace_id is None:
+            raise HTTPException(500, "no workspace configured")
+
+        if not await user_can_create_project_in_ws(conn, actor, workspace_id):
+            raise HTTPException(403, "no access to this workspace")
+
+        try:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO projects (workspace_id, name, department, exit_date, disposition)
+                VALUES ($1, $2, $3, $4::date, $5)
+                RETURNING id, workspace_id, name, is_common, created_at
+                """,
+                workspace_id, body.name, body.department, body.exit_date, body.disposition,
+            )
+        except UniqueViolationError:
+            raise HTTPException(409, "project with this name already exists")
+        except ForeignKeyViolationError:
+            raise HTTPException(403, "no access to this workspace")
+
+        if body.employee_name:
+            emp_id = await conn.fetchval(
+                "SELECT id FROM users WHERE name = $1", body.employee_name
+            )
+            if emp_id is None:
+                emp_id = await conn.fetchval(
+                    "INSERT INTO users (name) VALUES ($1) RETURNING id",
+                    body.employee_name,
+                )
+            await conn.execute(
+                "INSERT INTO project_members (project_id, user_id, role) "
+                "VALUES ($1, $2, 'employee') ON CONFLICT DO NOTHING",
+                row["id"], emp_id,
+            )
+
+        await conn.execute(
+            "INSERT INTO project_members (project_id, user_id, role) "
+            "VALUES ($1, $2, 'admin') ON CONFLICT DO NOTHING",
+            row["id"], int(actor["sub"]),
+        )
+
+        await conn.execute(
+            """INSERT INTO audit_log (user_id, action, resource, resource_id, details, organization_id)
+            VALUES ($1, 'create_project', 'project', $2, $3::jsonb, $4)""",
+            int(actor["sub"]), str(row["id"]),
+            json.dumps({"workspace_id": workspace_id, "name": body.name}),
             actor.get("organization_id"),
         )
 
@@ -280,8 +362,13 @@ async def get_project(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT p.id, p.workspace_id, p.name, p.is_common, p.created_at
+            SELECT p.id, p.workspace_id, p.name, p.is_common,
+                   p.department, p.exit_date::text, p.disposition,
+                   emp_u.name AS employee_name, emp_u.id AS employee_id,
+                   p.created_at
             FROM projects p
+            LEFT JOIN project_members emp_pm ON emp_pm.project_id = p.id AND emp_pm.role = 'employee'
+            LEFT JOIN users emp_u ON emp_u.id = emp_pm.user_id
             JOIN workspaces w ON w.id = p.workspace_id
             WHERE p.id = $1
               AND (
@@ -323,6 +410,105 @@ async def list_project_members(
             project_id,
         )
         return [{"user_id": r["user_id"], "name": r["name"], "role": r["role"]} for r in rows]
+
+
+@router.get("/projects/{project_id}/status")
+async def project_status(
+    project_id: int,
+    actor: dict = Depends(get_current_user),
+) -> dict:
+    """Offboarding process stage derived from existing data."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        from permissions import check_access
+        await check_access(conn, actor, project_id, "employee")
+
+        proj = await conn.fetchrow("SELECT id, name FROM projects WHERE id = $1", project_id)
+        if proj is None:
+            raise HTTPException(404, "project not found")
+
+        doc_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM documents WHERE project_id = $1 AND status != 'deleted'", project_id)
+        claim_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM claims WHERE project_id = $1", project_id)
+        session_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM interview_sessions WHERE project_id = $1", project_id)
+        completed_sessions = await conn.fetchval(
+            "SELECT COUNT(*) FROM interview_sessions WHERE project_id = $1 AND status = 'completed'", project_id)
+        coverage_pct = await conn.fetchval(
+            "SELECT ROUND((SUM(covered_criticality) / NULLIF(SUM(expected_count * expected_criticality), 0) * 100)::numeric, 1) "
+            "FROM entity_coverage WHERE project_id = $1", project_id) or 0
+
+        open_disputes = await conn.fetchval(
+            "SELECT COUNT(*) FROM claims WHERE project_id = $1 AND dispute_state = 'disputed'", project_id)
+
+        if float(coverage_pct) >= 80 and completed_sessions > 0 and open_disputes == 0:
+            stage = "handoff"
+        elif float(coverage_pct) >= 80 and completed_sessions > 0:
+            stage = "review"
+        elif session_count > 0:
+            stage = "interviews"
+        elif claim_count > 0:
+            stage = "curation"
+        elif doc_count > 0:
+            stage = "documents"
+        else:
+            stage = "setup"
+
+        return {
+            "project_id": project_id,
+            "project_name": proj["name"],
+            "stage": stage,
+            "documents": doc_count,
+            "claims": claim_count,
+            "sessions": session_count,
+            "completed_sessions": completed_sessions,
+            "coverage_pct": float(coverage_pct),
+            "open_disputes": open_disputes,
+        }
+
+
+@router.get("/projects/{project_id}/next-steps")
+async def project_next_steps(
+    project_id: int,
+    actor: dict = Depends(get_current_user),
+) -> dict:
+    """Returns actionable next steps for the offboarding process."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        from permissions import check_access
+        await check_access(conn, actor, project_id, "employee")
+
+        doc_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM documents WHERE project_id = $1 AND status != 'deleted'", project_id)
+        claim_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM claims WHERE project_id = $1", project_id)
+        session_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM interview_sessions WHERE project_id = $1", project_id)
+        coverage_pct = await conn.fetchval(
+            "SELECT ROUND((SUM(covered_criticality) / NULLIF(SUM(expected_count * expected_criticality), 0) * 100)::numeric, 1) "
+            "FROM entity_coverage WHERE project_id = $1", project_id) or 0
+        gaps = await conn.fetch(
+            "SELECT entity_name, coverage_state FROM entity_coverage "
+            "WHERE project_id = $1 AND coverage_state IN ('unknown', 'partial') "
+            "ORDER BY expected_criticality DESC LIMIT 5", project_id)
+
+        steps = []
+        if doc_count == 0:
+            steps.append({"action": "upload_documents", "label": "Upload source documents (contracts, wikis, org charts)"})
+        if doc_count > 0 and claim_count == 0:
+            steps.append({"action": "run_curator", "label": "Run AI Curator to extract claims from documents"})
+        if claim_count > 0 and session_count == 0:
+            steps.append({"action": "schedule_interview", "label": "Schedule an interview session with the employee"})
+        if gaps:
+            gap_names = [g["entity_name"] for g in gaps]
+            steps.append({"action": "cover_gaps", "label": f"Interview about knowledge gaps: {', '.join(gap_names)}"})
+        if float(coverage_pct) >= 80:
+            steps.append({"action": "review_twin", "label": "Review the digital twin — coverage is above 80%"})
+        if not steps:
+            steps.append({"action": "complete", "label": "Knowledge capture is complete"})
+
+        return {"project_id": project_id, "steps": steps, "coverage_pct": float(coverage_pct)}
 
 
 @router.put("/projects/{project_id}", response_model=ProjectResponse)

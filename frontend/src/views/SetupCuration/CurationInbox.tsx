@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useClaims, usePromoteClaim } from "../../hooks/useClaims";
+import { useClaims, usePromoteClaim, type Claim } from "../../hooks/useClaims";
 import { useBatch, type BatchAction } from "../../hooks/useBatch";
 import { pushToast } from "../../lib/toast";
 import { ClaimRow } from "./ClaimRow";
@@ -30,6 +30,16 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// The backend caps interview-sourced claims at corroborated_by_employee (force
+// to "validated" 409s). Promote to the next level up to that source's cap.
+const PROMO_ORDER = ["draft", "single_source", "corroborated", "corroborated_by_employee", "validated"];
+function nextLevel(claim: Claim): string {
+  const cap = claim.source_type === "interview" ? "corroborated_by_employee" : "validated";
+  const idx = PROMO_ORDER.indexOf(claim.corroboration_level);
+  const capIdx = PROMO_ORDER.indexOf(cap);
+  return PROMO_ORDER[Math.min(idx + 1, capIdx)] ?? cap;
+}
+
 export function CurationInbox({ projectId }: Props) {
   const { data: claims, isLoading, error } = useClaims(projectId);
   const batch = useBatch();
@@ -38,6 +48,7 @@ export function CurationInbox({ projectId }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [auditId, setAuditId] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<{ id: string; msg: string } | null>(null);
 
   const filtered = (claims ?? []).filter((c) => {
     if (filter === "pending") return c.corroboration_level === "single_source";
@@ -87,12 +98,24 @@ export function CurationInbox({ projectId }: Props) {
   };
 
   const forceApprove = (id: string) => {
+    const claim = (claims ?? []).find((c) => c.id === id);
+    if (!claim) return;
+    setRowError(null);
+    const target = nextLevel(claim);
     promote.mutate(
-      { claimId: id, newLevel: "validated", force: true },
+      { claimId: id, newLevel: target, force: true },
       {
-        onSuccess: () => pushToast("Claim approved", { tone: "success" }),
-        // The server enforces the interview cap even with force → surface its error.
-        onError: (e) => pushToast(`Could not approve: ${errMsg(e)}`, { tone: "error" }),
+        onSuccess: () => {
+          setRowError(null);
+          pushToast(`Claim promoted to ${target.replace(/_/g, " ")}`, { tone: "success" });
+        },
+        // Any residual server rejection stays visible on the row (not just a toast
+        // that flashes past while the optimistic update reverts).
+        onError: (e) => {
+          const msg = errMsg(e);
+          setRowError({ id, msg });
+          pushToast(`Could not promote: ${msg}`, { tone: "error" });
+        },
       },
     );
   };
@@ -120,6 +143,7 @@ export function CurationInbox({ projectId }: Props) {
               onApprove={() => setConfirmId(c.id)}
               onAudit={() => setAuditId(c.id)}
               approving={promote.isPending && promote.variables?.claimId === c.id}
+              error={rowError?.id === c.id ? rowError.msg : undefined}
             />
           ))}
         </div>
@@ -153,9 +177,9 @@ export function CurationInbox({ projectId }: Props) {
 
       <ConfirmDialog
         open={!!confirmId}
-        title="Force approve this claim?"
-        message="Promotes the claim to 'validated', a privileged override. The server still enforces the interview cap and may reject it."
-        confirmLabel="Approve"
+        title="Promote this claim?"
+        message="Promotes the claim to the next level its source allows (interview claims cap at corroborated-by-employee). A privileged curator/admin override."
+        confirmLabel="Promote"
         onConfirm={() => {
           if (confirmId) forceApprove(confirmId);
           setConfirmId(null);

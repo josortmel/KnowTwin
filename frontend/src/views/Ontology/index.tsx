@@ -29,7 +29,7 @@ import {
 } from "../../hooks/useOntology";
 
 const ACCENT = "var(--sec-ontology)";
-const PREDICATE_STATES = ["approved", "draft", "deprecated"] as const;
+const PREDICATE_STATES = ["experimental", "candidate", "approved", "deprecated", "archived", "forbidden"] as const;
 const FIELD = { background: "var(--field-bg)", boxShadow: "inset 0 0 0 1px var(--card-hairline)" } as const;
 const CELL = { background: "var(--inset)", boxShadow: "inset 0 0 0 1px var(--card-hairline)" } as const;
 
@@ -218,9 +218,9 @@ function EntityDetail({ entity }: { entity: VocabEntity }) {
           <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-3">Merge {entity.name} into…</div>
           <div className="flex gap-2">
             <div className="min-w-0 flex-1">
-              <TextInput value={query} onChange={setQuery} placeholder="Search target entity…" onEnter={() => query.trim().length >= 2 && void load(query)} />
+              <TextInput value={query} onChange={setQuery} placeholder="Search target entity…" onEnter={() => query.trim().length >= 3 && void load(query)} />
             </div>
-            <button type="button" onClick={() => query.trim().length >= 2 && void load(query)} disabled={searching} className="flex-none rounded-md px-3 py-2 font-mono text-[11px] text-ink-1 transition-colors hover:bg-[var(--inset)] disabled:opacity-50" style={FIELD}>
+            <button type="button" onClick={() => query.trim().length >= 3 && void load(query)} disabled={searching} className="flex-none rounded-md px-3 py-2 font-mono text-[11px] text-ink-1 transition-colors hover:bg-[var(--inset)] disabled:opacity-50" style={FIELD}>
               {searching ? "…" : "Search"}
             </button>
           </div>

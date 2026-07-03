@@ -9,6 +9,8 @@ import { OntologyPage } from "./pages/OntologyPage";
 import { IngestionPage } from "./pages/IngestionPage";
 import { ExplorerPage } from "./pages/ExplorerPage";
 import { DecisionsPage } from "./pages/DecisionsPage";
+import { ProcessesPage } from "./pages/ProcessesPage";
+import { ProcessDetailPage } from "./pages/ProcessDetailPage";
 
 // Graph pulls in react-force-graph-2d + d3-force (~200kB). Code-split it so the
 // rest of the app doesn't pay for a route the user may never open.
@@ -20,6 +22,8 @@ export function AppRouter() {
   return (
     <AppShell>
       <Routes>
+        <Route path="/processes" element={<ProcessesPage />} />
+        <Route path="/processes/:id" element={<ProcessDetailPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/setup" element={<SetupPage />} />
         <Route path="/interview" element={<InterviewPage />} />
@@ -36,7 +40,7 @@ export function AppRouter() {
             </Suspense>
           }
         />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/processes" replace />} />
       </Routes>
     </AppShell>
   );
